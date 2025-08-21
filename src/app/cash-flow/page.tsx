@@ -38,7 +38,7 @@ interface TransactionDetail {
   impact: number
   bankAccount?: string
   entryNumber?: string
-  customer?: string
+  property?: string
   vendor?: string
   name?: string
   accountType?: string
@@ -50,7 +50,7 @@ interface JournalEntryLine {
   date: string
   account: string
   memo: string | null
-  customer: string | null
+  property: string | null
   debit: string | number | null
   credit: string | number | null
 }
@@ -1228,7 +1228,7 @@ export default function CashFlowPage() {
         impact: tx.cashFlowImpact,
         entryNumber: tx.entry_number,
         invoiceNumber: tx.invoice_number,
-        customer: tx.class,
+        property: tx.class,
         vendor: tx.vendor,
         name: tx.name,
         bankAccount: tx.entry_bank_account,
@@ -1269,7 +1269,7 @@ export default function CashFlowPage() {
         impact: tx.cashFlowImpact,
         entryNumber: tx.entry_number,
         invoiceNumber: tx.invoice_number,
-        customer: tx.class,
+        property: tx.class,
         vendor: tx.vendor,
         name: tx.name,
         bankAccount: tx.entry_bank_account,
@@ -1418,7 +1418,7 @@ export default function CashFlowPage() {
         accountType: row.account_type,
         reportCategory: row.report_category,
         entryNumber: row.entry_number,
-        customer: row.class,
+        property: row.class,
         vendor: row.vendor,
         name: row.name,
         invoiceNumber: row.invoice_number,
@@ -1442,7 +1442,7 @@ export default function CashFlowPage() {
       console.error("Error fetching journal entry lines:", error)
       return
     }
-    setJournalEntryLines((data || []).map((row: any) => ({ ...row, customer: row.class })))
+    setJournalEntryLines((data || []).map((row: any) => ({ ...row, property: row.class })))
     setJournalTitle(`Journal Entry ${entryNumber}`)
     setShowJournalModal(true)
   }
@@ -3281,7 +3281,7 @@ export default function CashFlowPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {transaction.name ||
                             transaction.vendor ||
-                            transaction.customer ||
+                            transaction.property ||
                             "N/A"}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -3301,9 +3301,9 @@ export default function CashFlowPage() {
                           {formatCurrency(transaction.impact)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
-                          {transaction.customer && (
+                          {transaction.property && (
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              {transaction.customer}
+                              {transaction.property}
                             </span>
                           )}
                         </td>
@@ -3360,7 +3360,7 @@ export default function CashFlowPage() {
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-900">{line.account}</td>
                       <td className="px-4 py-2 text-sm text-gray-500">{line.memo || ""}</td>
-                      <td className="px-4 py-2 text-sm text-gray-500">{line.customer || ""}</td>
+                      <td className="px-4 py-2 text-sm text-gray-500">{line.property || ""}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-right text-red-600">
                         {formatCurrency(Number.parseFloat(line.debit?.toString() || "0"))}
                       </td>
