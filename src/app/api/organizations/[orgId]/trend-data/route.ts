@@ -40,7 +40,7 @@ interface Entry {
   account_type: string | null
   debit: number | string | null
   credit: number | string | null
-  customer?: string | null
+  class?: string | null
 }
 
 export async function GET(req: Request) {
@@ -48,9 +48,9 @@ export async function GET(req: Request) {
   const months = Number.parseInt(url.searchParams.get("months") || "12", 10)
   const endMonth = Number.parseInt(url.searchParams.get("endMonth") || "1", 10)
   const endYear = Number.parseInt(url.searchParams.get("endYear") || "2024", 10)
-  const customerParam = url.searchParams.get("customerId")
-  const customerIds = customerParam
-    ? customerParam
+  const classParam = url.searchParams.get("classId")
+  const classIds = classParam
+    ? classParam
         .split(",")
         .map((c) => c.trim())
         .filter(Boolean)
@@ -82,12 +82,12 @@ export async function GET(req: Request) {
 
     let query = supabase
       .from("journal_entry_lines")
-      .select("account_type,debit,credit,customer")
+      .select("account_type,debit,credit,class")
       .gte("date", startDate)
       .lte("date", endDate)
 
-    if (customerIds.length > 0) {
-      query = query.in("customer", customerIds)
+    if (classIds.length > 0) {
+      query = query.in("class", classIds)
     }
 
     const { data, error } = await query

@@ -322,8 +322,8 @@ const classifyAccount = (accountType, accountDetailType, accountName) => {
   return null
 }
 
-// Hardcoded customers based on actual database data
-const HARDCODED_CUSTOMERS = [
+// Hardcoded properties based on actual database data
+const HARDCODED_PROPERTIES = [
   "All Properties",
   "Cleveland",
   "Columbus IN",
@@ -341,31 +341,31 @@ const HARDCODED_CUSTOMERS = [
   "Wesley",
 ]
 
-// Fetch customers
-const fetchCustomers = async () => {
+// Fetch properties (classes)
+const fetchProperties = async () => {
   try {
     const { data, error } = await supabase
       .from("journal_entry_lines")
-      .select("customer")
-      .not("customer", "is", null)
+      .select("class")
+      .not("class", "is", null)
 
     if (error) {
-      console.error("❌ Customer fetch error:", error)
-      return HARDCODED_CUSTOMERS
+      console.error("❌ Property fetch error:", error)
+      return HARDCODED_PROPERTIES
     }
 
-    const customerValues = data
-      .map((item) => item.customer)
+    const classValues = data
+      .map((item) => item.class)
       .filter((c) => c && c.trim() !== "")
 
-    const uniqueCustomers = [...new Set(customerValues)].sort()
-    const allCustomers = [
-      ...new Set([...HARDCODED_CUSTOMERS.slice(1), ...uniqueCustomers]),
+    const uniqueClasses = [...new Set(classValues)].sort()
+    const allClasses = [
+      ...new Set([...HARDCODED_PROPERTIES.slice(1), ...uniqueClasses]),
     ].sort()
-    return ["All Properties", ...allCustomers]
+    return ["All Properties", ...allClasses]
   } catch (error) {
-    console.error("❌ Customer fetch error:", error)
-    return HARDCODED_CUSTOMERS
+    console.error("❌ Property fetch error:", error)
+    return HARDCODED_PROPERTIES
   }
 }
 
@@ -586,10 +586,10 @@ const fetchTimeSeriesData = async (property = "All Properties", monthYear, timeP
       // Supabase might have a default limit, so we'll use a very high limit
       let url = `${SUPABASE_URL}/rest/v1/journal_entry_lines?select=*&date=gte.${range.start}&date=lte.${range.end}&limit=10000`
 
-      // FIXED: For by-property view, NEVER filter by customer - we need ALL customer data
-      // Only filter by customer for non-by-property views
+      // FIXED: For by-property view, NEVER filter by class - we need ALL property data
+      // Only filter by class for non-by-property views
       if (viewMode !== "by-property" && property !== "All Properties") {
-        url += `&customer=eq.${encodeURIComponent(property)}`
+        url += `&class=eq.${encodeURIComponent(property)}`
       }
 
       smartLog(`🔍 FETCHING URL for ${viewMode} view:`, url)
@@ -617,7 +617,7 @@ const fetchTimeSeriesData = async (property = "All Properties", monthYear, timeP
         if (viewMode === "by-property") {
           // Get available customers from the data
           const propertiesInData = [
-            ...new Set(rawData.map((row) => row.customer).filter((cls) => cls && cls.trim() !== "")),
+            ...new Set(rawData.map((row) => row.class).filter((cls) => cls && cls.trim() !== "")),
           ].sort()
           if (availableProperties.length === 0) {
             availableProperties = propertiesInData
@@ -632,7 +632,7 @@ const fetchTimeSeriesData = async (property = "All Properties", monthYear, timeP
           // Group by account first, then by customer within each account
           const groupedByAccount = rawData.reduce((acc, row) => {
             const accountName = row.account || "Unknown Account"
-            const propertyName = row.customer || "No Property"
+            const propertyName = row.class || "No Property"
 
             const category = classifyAccount(row.account_type, row.account_detail_type, accountName)
             if (category === null) {
@@ -959,7 +959,7 @@ export default function MobileResponsiveFinancialsPage() {
   const [isLoadingData, setIsLoadingData] = useState(false)
   const [realData, setRealData] = useState(null)
   const [dataError, setDataError] = useState(null)
-  const [availableProperties, setAvailableProperties] = useState(HARDCODED_CUSTOMERS)
+  const [availableProperties, setAvailableProperties] = useState(HARDCODED_PROPERTIES)
   const [selectedAccountDetails, setSelectedAccountDetails] = useState(null)
   const [timeSeriesData, setTimeSeriesData] = useState(null)
 
@@ -1147,9 +1147,9 @@ export default function MobileResponsiveFinancialsPage() {
     try {
       setIsLoadingData(true)
 
-      const customers = await fetchCustomers()
-      smartLog("🏠 Available customers loaded:", customers)
-      setAvailableProperties(customers)
+      const properties = await fetchProperties()
+      smartLog("🏠 Available properties loaded:", properties)
+      setAvailableProperties(properties)
 
       await loadRealFinancialData()
     } catch (error) {
@@ -1812,7 +1812,7 @@ export default function MobileResponsiveFinancialsPage() {
       currentData.forEach((account) => {
         if (account.entries) {
           account.entries.forEach((entry) => {
-            const property = entry.customer || "No Property"
+            const property = entry.class || "No Property"
             if (!propertyData[property]) {
               propertyData[property] = { revenue: 0, cogs: 0, opex: 0, otherIncome: 0, otherExpenses: 0 }
             }
@@ -3018,7 +3018,7 @@ export default function MobileResponsiveFinancialsPage() {
 
                       <div className="flex justify-between text-sm text-gray-600">
                         <span>ID: {entry.id}</span>
-                        <span>Property: {entry.customer || "No Property"}</span>
+                        <span>Property: {entry.class || "No Property"}</span>
                       </div>
                     </div>
                   ))}
@@ -3121,7 +3121,7 @@ export default function MobileResponsiveFinancialsPage() {
                       {entry.memo && <div className="mb-2 text-xs text-gray-700">{entry.memo}</div>}
 
                       <div className="text-xs text-gray-600">
-                        <strong>Property:</strong> {entry.customer || "No Property"}
+                        <strong>Property:</strong> {entry.class || "No Property"}
                       </div>
                     </div>
                   ))}

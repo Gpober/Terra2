@@ -26,7 +26,7 @@ const isCogsAccount = (type: string | null) => {
 }
 
 interface Entry {
-  customer: string | null
+  class: string | null
   account_type: string | null
   debit: number | string | null
   credit: number | string | null
@@ -63,7 +63,7 @@ export async function GET(req: Request) {
 
   const { data, error } = await supabase
     .from("journal_entry_lines")
-    .select("customer,account_type,debit,credit")
+    .select("class,account_type,debit,credit")
     .gte("date", startDate)
     .lte("date", endDate)
 
@@ -81,11 +81,11 @@ export async function GET(req: Request) {
   }> = {}
 
   ;(data || []).forEach((tx: Entry) => {
-    // Group transactions without a customer under "Unassigned"
-    const customer = tx.customer || "Unassigned"
-    if (!map[customer]) {
-      map[customer] = {
-        name: customer,
+    // Group transactions without a class under "Unassigned"
+    const property = tx.class || "Unassigned"
+    if (!map[property]) {
+      map[property] = {
+        name: property,
         revenue: 0,
         grossProfit: 0,
         operatingExpenses: 0,
@@ -98,11 +98,11 @@ export async function GET(req: Request) {
     const credit = Number(tx.credit) || 0
 
     if (isIncomeAccount(tx.account_type)) {
-      map[customer].revenue += credit - debit
+      map[property].revenue += credit - debit
     } else if (isCogsAccount(tx.account_type)) {
-      map[customer].cogs += debit - credit
+      map[property].cogs += debit - credit
     } else if (isExpenseAccount(tx.account_type)) {
-      map[customer].operatingExpenses += debit - credit
+      map[property].operatingExpenses += debit - credit
     }
   })
 

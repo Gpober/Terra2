@@ -390,16 +390,16 @@ export default function FinancialOverviewPage() {
     try {
       const { data, error } = await supabase
         .from("journal_entry_lines")
-        .select("customer")
-        .not("customer", "is", null);
+        .select("class")
+        .not("class", "is", null);
       if (error) throw error;
-      const customers = new Set<string>();
+      const classes = new Set<string>();
       data.forEach((row) => {
-        if (row.customer && row.customer.trim()) {
-          customers.add(row.customer.trim());
+        if (row.class && row.class.trim()) {
+          classes.add(row.class.trim());
         }
       });
-      setAvailableProperties(["All Properties", ...Array.from(customers).sort()]);
+      setAvailableProperties(["All Properties", ...Array.from(classes).sort()]);
     } catch (err) {
       console.error("Error fetching properties:", err);
     }
@@ -447,7 +447,7 @@ export default function FinancialOverviewPage() {
           debit,
           credit,
           memo,
-          customer,
+          class,
           vendor,
           name,
           entry_bank_account,
@@ -463,7 +463,7 @@ export default function FinancialOverviewPage() {
         .order("date", { ascending: true });
 
       if (selectedPropertyList.length > 0) {
-        currentQuery = currentQuery.in("customer", selectedPropertyList);
+        currentQuery = currentQuery.in("class", selectedPropertyList);
       }
 
       const { data: currentTransactions, error: currentError } =
@@ -506,7 +506,7 @@ export default function FinancialOverviewPage() {
           debit,
           credit,
           memo,
-          customer,
+          class,
           vendor,
           name,
           entry_bank_account,
@@ -522,7 +522,7 @@ export default function FinancialOverviewPage() {
         .order("date", { ascending: true });
 
       if (selectedPropertyList.length > 0) {
-        prevQuery = prevQuery.in("customer", selectedPropertyList);
+        prevQuery = prevQuery.in("class", selectedPropertyList);
       }
 
       const { data: prevTransactions, error: prevError } = await prevQuery;
@@ -570,7 +570,7 @@ export default function FinancialOverviewPage() {
             debit,
             credit,
             memo,
-            customer,
+            class,
             vendor,
             name,
             entry_bank_account,
@@ -586,7 +586,7 @@ export default function FinancialOverviewPage() {
           .order("date", { ascending: true });
 
         if (selectedPropertyList.length > 0) {
-          monthQuery = monthQuery.in("customer", selectedPropertyList);
+          monthQuery = monthQuery.in("class", selectedPropertyList);
         }
 
         const { data: monthData } = await monthQuery;
@@ -803,7 +803,7 @@ export default function FinancialOverviewPage() {
     const properties = {};
 
     transactions.forEach((transaction) => {
-      const property = transaction.customer || "Unassigned";
+      const property = transaction.class || "Unassigned";
       const category = classifyPLAccount(
         transaction.account_type,
         transaction.report_category,
@@ -954,7 +954,7 @@ export default function FinancialOverviewPage() {
       );
       const propertyQuery =
         selectedPropertyList.length > 0
-          ? `&customerId=${encodeURIComponent(selectedPropertyList.join(","))}`
+          ? `&classId=${encodeURIComponent(selectedPropertyList.join(","))}`
           : "";
       const res = await fetch(
         `/api/organizations/${orgId}/trend-data?months=12&endMonth=${endMonth}&endYear=${selectedYear}${propertyQuery}`,
@@ -985,12 +985,12 @@ export default function FinancialOverviewPage() {
       const res = await fetch(
         `/api/organizations/${orgId}/dashboard-summary?start=${startDate}&end=${endDate}&includeProperties=true`,
       );
-      if (!res.ok) throw new Error("Failed to fetch customer data");
+      if (!res.ok) throw new Error("Failed to fetch property data");
       const json: { propertyBreakdown: PropertyPoint[] } = await res.json();
       setPropertyData(json.propertyBreakdown || []);
     } catch (e) {
       const err = e as Error;
-      setPropertyError(err.message || "Failed to load customer data");
+      setPropertyError(err.message || "Failed to load property data");
       setPropertyData([]);
     } finally {
       setLoadingProperty(false);
@@ -1799,7 +1799,7 @@ export default function FinancialOverviewPage() {
                   )}
                   {!loadingProperty && propertyChartData.length === 0 && (
                     <div className="flex flex-col items-center justify-center py-8 text-gray-500">
-                      <p>No customer data available</p>
+                      <p>No property data available</p>
                       <Button
                         className="mt-4 flex items-center gap-2"
                         onClick={handleSync}
@@ -2135,7 +2135,7 @@ export default function FinancialOverviewPage() {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {customer.transactionCount}
+                            {property.transactionCount}
                           </td>
                         </tr>
                       );

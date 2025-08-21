@@ -58,7 +58,6 @@ type FinancialTransaction = {
   created: string;
   created_by: string;
   name: string;
-  customer: string | null;
   vendor: string | null;
   employee: string | null;
   class: string | null;
@@ -511,12 +510,12 @@ export default function FinancialsPage() {
          account_type, 
          debit, 
          credit, 
-         memo, 
-         customer, 
-         vendor, 
-         name, 
-         entry_bank_account, 
-         normal_balance, 
+         memo,
+         class,
+         vendor,
+         name,
+         entry_bank_account,
+         normal_balance,
          report_category,
          is_cash_account,
          detail_type,
@@ -529,7 +528,7 @@ export default function FinancialsPage() {
 
       // Apply property filter
       if (selectedProperty !== "All Properties") {
-        query = query.eq("customer", selectedProperty);
+        query = query.eq("class", selectedProperty);
       }
 
       const { data: allTransactions, error } = await query;
@@ -570,11 +569,11 @@ export default function FinancialsPage() {
       smartLog(`📈 Filtered to ${plTransactions.length} P&L transactions`);
       smartLog(`🔍 Sample P&L transactions:`, plTransactions.slice(0, 5));
 
-      // Get unique customers for filter dropdown using 'customer' field
+      // Get unique classes for filter dropdown using 'class' field
       const properties = new Set<string>();
       plTransactions.forEach((tx) => {
-        if (tx.customer && tx.customer.trim()) {
-          properties.add(tx.customer.trim());
+        if (tx.class && tx.class.trim()) {
+          properties.add(tx.class.trim());
         }
       });
       setAvailableProperties([
@@ -1279,7 +1278,7 @@ export default function FinancialsPage() {
     if (viewMode === "Property") {
       // Filter transactions by property and calculate total
       const filteredTransactions = transactions.filter(
-        (tx) => tx.customer === header,
+        (tx) => tx.class === header,
       );
       const credits = filteredTransactions.reduce((sum, tx) => {
         const creditValue = tx.credit
@@ -1374,7 +1373,7 @@ export default function FinancialsPage() {
 
     // Filter by property if specified (Property view)
     if (property && viewMode === "Property") {
-      transactions = transactions.filter((tx) => tx.customer === property);
+      transactions = transactions.filter((tx) => tx.class === property);
     }
 
     let title = subAccount
@@ -3049,7 +3048,7 @@ export default function FinancialsPage() {
                           <td className="px-6 py-4 text-sm text-gray-900">
                             {transaction.name ||
                               transaction.vendor ||
-                              transaction.customer ||
+                              transaction.class ||
                               "N/A"}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-500">
@@ -3063,9 +3062,9 @@ export default function FinancialsPage() {
                             {formatCurrency(Math.abs(netAmount))}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
-                            {transaction.customer && (
+                            {transaction.class && (
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                {transaction.customer}
+                                {transaction.class}
                               </span>
                             )}
                           </td>
@@ -3104,9 +3103,9 @@ export default function FinancialsPage() {
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Memo
                     </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Customer
-                    </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Property
+                      </th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Debit
                     </th>
@@ -3123,7 +3122,7 @@ export default function FinancialsPage() {
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-900">{line.account}</td>
                       <td className="px-4 py-2 text-sm text-gray-500">{line.memo || ""}</td>
-                      <td className="px-4 py-2 text-sm text-gray-500">{line.customer || ""}</td>
+                      <td className="px-4 py-2 text-sm text-gray-500">{line.class || ""}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-right text-red-600">
                         {formatCurrency(Number.parseFloat(line.debit?.toString() || "0"))}
                       </td>
