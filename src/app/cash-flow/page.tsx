@@ -133,7 +133,7 @@ export default function CashFlowPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>("June")
   const [selectedYear, setSelectedYear] = useState<string>("2024")
   const [timePeriod, setTimePeriod] = useState<TimePeriod>("Monthly")
-  const [selectedProperty, setSelectedProperty] = useState("All Customers")
+  const [selectedProperty, setSelectedProperty] = useState("All Properties")
   const [selectedBankAccount, setSelectedBankAccount] = useState("All Bank Accounts")
   const [viewMode, setViewMode] = useState<ViewMode>("offset")
   const [periodType, setPeriodType] = useState<PeriodType>("monthly")
@@ -177,7 +177,7 @@ export default function CashFlowPage() {
   const [bankAccountData, setBankAccountData] = useState<BankAccountData[]>([])
 
   // Common state
-  const [availableProperties, setAvailableProperties] = useState<string[]>(["All Customers"])
+  const [availableProperties, setAvailableProperties] = useState<string[]>(["All Properties"])
   const [availableBankAccounts, setAvailableBankAccounts] = useState<string[]>(["All Bank Accounts"])
   const [error, setError] = useState<string | null>(null)
   const [showTransactionModal, setShowTransactionModal] = useState(false)
@@ -203,7 +203,7 @@ export default function CashFlowPage() {
   }, [])
 
   const baseSelectColumns =
-    "entry_number, date, account, account_type, debit, credit, memo, customer, vendor, name, entry_bank_account, normal_balance, report_category"
+    "entry_number, date, account, account_type, debit, credit, memo, class, vendor, name, entry_bank_account, normal_balance, report_category"
 
   // Extract date parts directly from string
   const getDateParts = (dateString: string) => {
@@ -712,23 +712,23 @@ export default function CashFlowPage() {
     return "Trailing 12 Months"
   }
 
-  // ENHANCED: Fetch available customers and bank accounts using new fields
+  // ENHANCED: Fetch available properties and bank accounts using new fields
   const fetchFilters = async () => {
     try {
-      // Fetch customers from 'customer' field
+      // Fetch properties from 'class' field
       const { data: propertyData, error: propertyError } = await supabase
         .from("journal_entry_lines")
-        .select("customer")
-        // .not("customer", "is", null)
+        .select("class")
+        // .not("class", "is", null)
 
       if (propertyError) throw propertyError
 
       const properties = new Set<string>()
       propertyData.forEach((row: any) => {
-  if (row.customer) properties.add(row.customer)  // ← Now row.customer will exist
-})
+        if (row.class) properties.add(row.class)
+      })
 
-      setAvailableProperties(["All Customers", ...Array.from(properties).sort()])
+      setAvailableProperties(["All Properties", ...Array.from(properties).sort()])
 
       // ENHANCED: Fetch bank accounts using entry_bank_account field
       const { data: bankData, error: bankError } = await supabase
@@ -766,7 +766,7 @@ export default function CashFlowPage() {
 
       console.log(`🔍 CASH FLOW BY BANK ACCOUNT - Using Enhanced Database`)
       console.log(`📅 Period: ${startDate} to ${endDate}`)
-      console.log(`🏢 Customer Filter: "${selectedProperty}"`)
+      console.log(`🏢 Property Filter: "${selectedProperty}"`)
       console.log(`🔄 Include Transfers: ${includeTransfers}`)
 
       const selectColumns = hasInvoiceNumber
@@ -790,8 +790,8 @@ export default function CashFlowPage() {
         query = query.eq("is_cash_account", false).neq("report_category", "transfer")
       }
 
-      if (selectedProperty !== "All Customers") {
-        query = query.eq("customer", selectedProperty)
+      if (selectedProperty !== "All Properties") {
+        query = query.eq("class", selectedProperty)
       }
 
       const { data: cashFlowTransactions, error } = await query
@@ -916,7 +916,7 @@ export default function CashFlowPage() {
 
       console.log(`🔍 CASH FLOW OFFSET VIEW - Using Enhanced Database`)
       console.log(`📅 Period: ${startDate} to ${endDate}`)
-      console.log(`🏢 Customer Filter: "${selectedProperty}"`)
+      console.log(`🏢 Property Filter: "${selectedProperty}"`)
       console.log(`🏦 Bank Account Filter: "${selectedBankAccount}"`)
       console.log(`🔄 Include Transfers: ${includeTransfers}`)
 
@@ -941,8 +941,8 @@ export default function CashFlowPage() {
         query = query.eq("is_cash_account", false).neq("report_category", "transfer")
       }
 
-      if (selectedProperty !== "All Customers") {
-        query = query.eq("customer", selectedProperty)
+      if (selectedProperty !== "All Properties") {
+        query = query.eq("class", selectedProperty)
       }
 
       if (selectedBankAccount !== "All Bank Accounts") {
@@ -1091,7 +1091,7 @@ export default function CashFlowPage() {
 
       console.log(`🔍 CASH FLOW TRADITIONAL VIEW - Using Enhanced Database`)
       console.log(`📅 Period: ${startDate} to ${endDate}`)
-      console.log(`🏢 Customer Filter: "${selectedProperty}"`)
+      console.log(`🏢 Property Filter: "${selectedProperty}"`)
       console.log(`🏦 Bank Account Filter: "${selectedBankAccount}"`)
       console.log(`🔄 Include Transfers: ${includeTransfers}`)
 
@@ -1116,8 +1116,8 @@ export default function CashFlowPage() {
         query = query.eq("is_cash_account", false).neq("report_category", "transfer")
       }
 
-      if (selectedProperty !== "All Customers") {
-        query = query.eq("customer", selectedProperty)
+      if (selectedProperty !== "All Properties") {
+        query = query.eq("class", selectedProperty)
       }
 
       if (selectedBankAccount !== "All Bank Accounts") {
@@ -1134,7 +1134,7 @@ export default function CashFlowPage() {
       const propertyTransactions = new Map<string, any[]>()
 
       cashFlowTransactions.forEach((tx: any) => {
-        const property = tx.customer || "Unclassified"
+        const property = tx.class || "Unclassified"
         if (!propertyTransactions.has(property)) {
           propertyTransactions.set(property, [])
         }
@@ -1228,10 +1228,9 @@ export default function CashFlowPage() {
         impact: tx.cashFlowImpact,
         entryNumber: tx.entry_number,
         invoiceNumber: tx.invoice_number,
-        customer: tx.customer,
+        customer: tx.class,
         vendor: tx.vendor,
         name: tx.name,
-        customer: tx.customer,
         bankAccount: tx.entry_bank_account,
         accountType: tx.account_type,
         reportCategory: tx.report_category,
@@ -1270,10 +1269,9 @@ export default function CashFlowPage() {
         impact: tx.cashFlowImpact,
         entryNumber: tx.entry_number,
         invoiceNumber: tx.invoice_number,
-        customer: tx.customer,
+        customer: tx.class,
         vendor: tx.vendor,
         name: tx.name,
-        customer: tx.customer,
         bankAccount: tx.entry_bank_account,
         accountType: tx.account_type,
         reportCategory: tx.report_category,
@@ -1420,7 +1418,7 @@ export default function CashFlowPage() {
         accountType: row.account_type,
         reportCategory: row.report_category,
         entryNumber: row.entry_number,
-        customer: row.customer,
+        customer: row.class,
         vendor: row.vendor,
         name: row.name,
         invoiceNumber: row.invoice_number,
@@ -1437,14 +1435,14 @@ export default function CashFlowPage() {
     if (!entryNumber) return
     const { data, error } = await supabase
       .from("journal_entry_lines")
-      .select("date, account, memo, customer, debit, credit")
+      .select("date, account, memo, class, debit, credit")
       .eq("entry_number", entryNumber)
       .order("line_sequence")
     if (error) {
       console.error("Error fetching journal entry lines:", error)
       return
     }
-    setJournalEntryLines(data || [])
+    setJournalEntryLines((data || []).map((row: any) => ({ ...row, customer: row.class })))
     setJournalTitle(`Journal Entry ${entryNumber}`)
     setShowJournalModal(true)
   }
@@ -1749,7 +1747,7 @@ export default function CashFlowPage() {
               </div>
             )}
 
-            {/* Customer Filter */}
+            {/* Property Filter */}
             <select
               value={selectedProperty}
               onChange={(e) => setSelectedProperty(e.target.value)}
@@ -1831,7 +1829,7 @@ export default function CashFlowPage() {
                           : timePeriod === "Trailing 12"
                             ? `For ${formatDate(calculateDateRange().startDate)} - ${formatDate(calculateDateRange().endDate)}`
                             : `For ${timePeriod} Period`}
-                  {selectedProperty !== "All Customers" && (
+                  {selectedProperty !== "All Properties" && (
                     <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
                       Property: {selectedProperty}
                     </span>
@@ -1976,7 +1974,7 @@ export default function CashFlowPage() {
                           : timePeriod === "Trailing 12"
                             ? `For ${formatDate(calculateDateRange().startDate)} - ${formatDate(calculateDateRange().endDate)}`
                             : `For ${timePeriod} Period`}
-                  {selectedProperty !== "All Customers" && (
+                  {selectedProperty !== "All Properties" && (
                     <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
                       Property: {selectedProperty}
                     </span>
@@ -2892,7 +2890,7 @@ export default function CashFlowPage() {
                           : timePeriod === "Trailing 12"
                             ? `For ${formatDate(calculateDateRange().startDate)} - ${formatDate(calculateDateRange().endDate)}`
                             : `For ${timePeriod} Period`}
-                  {selectedProperty !== "All Customers" && (
+                  {selectedProperty !== "All Properties" && (
                     <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
                       Property: {selectedProperty}
                     </span>
@@ -3254,7 +3252,7 @@ export default function CashFlowPage() {
                         Date
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Payee/Customer
+                        Payee/Property
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Invoice #
@@ -3266,7 +3264,7 @@ export default function CashFlowPage() {
                         Amount
                       </th>
                       <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Customer
+                        Property
                       </th>
                     </tr>
                   </thead>
@@ -3344,7 +3342,7 @@ export default function CashFlowPage() {
                       Memo
                     </th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Customer
+                      Property
                     </th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Debit
