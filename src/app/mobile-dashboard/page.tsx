@@ -520,10 +520,10 @@ export default function EnhancedMobileDashboard() {
           .gt("open_balance", 0);
         const map: Record<string, PropertySummary> = {};
         (data || []).forEach((rec: any) => {
-          const customer = rec.customer || "General";
-          if (!map[customer]) {
-            map[customer] = {
-              name: customer,
+          const property = rec.class || "General";
+          if (!map[property]) {
+            map[property] = {
+              name: property,
               current: 0,
               days30: 0,
               days60: 0,
@@ -535,12 +535,12 @@ export default function EnhancedMobileDashboard() {
           const amt = Number(rec.open_balance) || 0;
           const days = calculateDaysOutstanding(rec.due_date);
           const bucket = getAgingBucket(days);
-          if (bucket === "current") map[customer].current = (map[customer].current || 0) + amt;
-          else if (bucket === "31-60") map[customer].days30 = (map[customer].days30 || 0) + amt;
-          else if (bucket === "61-90") map[customer].days60 = (map[customer].days60 || 0) + amt;
-          else if (bucket === "91-120") map[customer].days90 = (map[customer].days90 || 0) + amt;
-          else map[customer].over90 = (map[customer].over90 || 0) + amt;
-          map[customer].total = (map[customer].total || 0) + amt;
+          if (bucket === "current") map[property].current = (map[property].current || 0) + amt;
+          else if (bucket === "31-60") map[property].days30 = (map[property].days30 || 0) + amt;
+          else if (bucket === "61-90") map[property].days60 = (map[property].days60 || 0) + amt;
+          else if (bucket === "91-120") map[property].days90 = (map[property].days90 || 0) + amt;
+          else map[property].over90 = (map[property].over90 || 0) + amt;
+          map[property].total = (map[property].total || 0) + amt;
         });
         setProperties(Object.values(map));
         return;
@@ -548,7 +548,7 @@ export default function EnhancedMobileDashboard() {
 
       const { start, end } = getDateRange();
 
-      const selectColumns = "account_type, report_category, normal_balance, debit, credit, customer, date, entry_bank_account, is_cash_account";
+      const selectColumns = "account_type, report_category, normal_balance, debit, credit, class, date, entry_bank_account, is_cash_account";
 
       let query = supabase
         .from("journal_entry_lines")
@@ -567,10 +567,10 @@ export default function EnhancedMobileDashboard() {
       const map: Record<string, PropertySummary> = {};
 
       ((data as JournalRow[]) || []).forEach((row) => {
-        const customer = row.customer || "General";
-        if (!map[customer]) {
-          map[customer] = {
-            name: customer,
+        const property = row.class || "General";
+        if (!map[property]) {
+          map[property] = {
+            name: property,
             revenue: 0,
             cogs: 0,
             expenses: 0,
@@ -587,15 +587,15 @@ export default function EnhancedMobileDashboard() {
         if (reportType === "pl") {
           const t = (row.account_type || "").toLowerCase();
           if (t.includes("income") || t.includes("revenue")) {
-            map[customer].revenue = (map[customer].revenue || 0) + (credit - debit);
+            map[property].revenue = (map[property].revenue || 0) + (credit - debit);
           } else if (t.includes("cost of goods sold") || t.includes("cogs")) {
             const amt = debit - credit;
-            map[customer].cogs = (map[customer].cogs || 0) + amt;
+            map[property].cogs = (map[property].cogs || 0) + amt;
           } else if (t.includes("expense")) {
             const amt = debit - credit;
-            map[customer].expenses = (map[customer].expenses || 0) + amt;
+            map[property].expenses = (map[property].expenses || 0) + amt;
           }
-          map[customer].netIncome = (map[customer].revenue || 0) - (map[customer].cogs || 0) - (map[customer].expenses || 0);
+          map[property].netIncome = (map[property].revenue || 0) - (map[property].cogs || 0) - (map[property].expenses || 0);
         } else {
           const classification = classifyTransaction(row.account_type, row.report_category);
 
@@ -605,11 +605,11 @@ export default function EnhancedMobileDashboard() {
               : row.normal_balance || credit - debit;
 
             if (classification === "operating") {
-              map[customer].operating = (map[customer].operating || 0) + cashImpact;
+              map[property].operating = (map[property].operating || 0) + cashImpact;
             } else if (classification === "financing") {
-              map[customer].financing = (map[customer].financing || 0) + cashImpact;
+              map[property].financing = (map[property].financing || 0) + cashImpact;
             } else if (classification === "investing") {
-              map[customer].investing = (map[customer].investing || 0) + cashImpact;
+              map[property].investing = (map[property].investing || 0) + cashImpact;
             }
           }
         }
@@ -880,14 +880,14 @@ export default function EnhancedMobileDashboard() {
     const { start, end } = getDateRange();
     let query = supabase
       .from("journal_entry_lines")
-      .select("account, account_type, debit, credit, customer, date")
+      .select("account, account_type, debit, credit, class, date")
       .gte("date", start)
       .lte("date", end);
     if (propertyName) {
       query =
         propertyName === "General"
-          ? query.is("customer", null)
-          : query.eq("customer", propertyName);
+          ? query.is("class", null)
+          : query.eq("class", propertyName);
     }
     const { data } = await query;
     const rev: Record<string, number> = {};
@@ -920,7 +920,7 @@ export default function EnhancedMobileDashboard() {
     const { start, end } = getDateRange();
     
     // Enhanced query mirroring cash flow component
-    const selectColumns = "account, account_type, report_category, normal_balance, debit, credit, customer, date, entry_bank_account, is_cash_account";
+    const selectColumns = "account, account_type, report_category, normal_balance, debit, credit, class, date, entry_bank_account, is_cash_account";
     
     let query = supabase
       .from("journal_entry_lines")
@@ -934,8 +934,8 @@ export default function EnhancedMobileDashboard() {
     if (propertyName) {
       query =
         propertyName === "General"
-          ? query.is("customer", null)
-          : query.eq("customer", propertyName);
+          ? query.is("class", null)
+          : query.eq("class", propertyName);
     }
     
     const { data } = await query;
@@ -988,7 +988,7 @@ export default function EnhancedMobileDashboard() {
       .select("*")
       .gt("open_balance", 0);
     if (propertyName) {
-      query = query.eq("customer", propertyName);
+      query = query.eq("class", propertyName);
     }
     const { data } = await query;
     const list: ARTransaction[] = (data as any[] || []).map((rec) => ({
@@ -997,7 +997,7 @@ export default function EnhancedMobileDashboard() {
       dueDate: rec.due_date,
       amount: Number(rec.open_balance) || 0,
       daysOutstanding: calculateDaysOutstanding(rec.due_date),
-      customer: rec.customer,
+      customer: rec.class,
       memo: rec.memo || null,
     }));
     setArTransactions(list);
@@ -1011,7 +1011,7 @@ export default function EnhancedMobileDashboard() {
     let query = supabase
       .from("journal_entry_lines")
       .select(
-        "date, debit, credit, account, customer, report_category, normal_balance, memo, vendor, name, entry_number, number",
+        "date, debit, credit, account, class, report_category, normal_balance, memo, vendor, name, entry_number, number",
       )
       .eq("account", account)
       .gte("date", start)
@@ -1026,8 +1026,8 @@ export default function EnhancedMobileDashboard() {
     if (selectedProperty) {
       query =
         selectedProperty === "General"
-          ? query.is("customer", null)
-          : query.eq("customer", selectedProperty);
+          ? query.is("class", null)
+          : query.eq("class", selectedProperty);
     }
     const { data } = await query;
     const list: Transaction[] = ((data as JournalRow[]) || [])
@@ -1054,7 +1054,7 @@ export default function EnhancedMobileDashboard() {
           running: 0,
           payee: row.vendor || row.name,
           memo: row.memo,
-          customer: row.customer,
+          customer: row.class,
           entryNumber: row.entry_number,
         };
       });
@@ -1072,14 +1072,14 @@ export default function EnhancedMobileDashboard() {
     if (!entryNumber) return;
     const { data, error } = await supabase
       .from("journal_entry_lines")
-      .select("date, account, memo, customer, debit, credit")
+      .select("date, account, memo, class, debit, credit")
       .eq("entry_number", entryNumber)
       .order("line_sequence");
     if (error) {
       console.error("Error fetching journal entry lines:", error);
       return;
     }
-    setJournalEntryLines(data || []);
+    setJournalEntryLines((data || []).map((row: any) => ({ ...row, customer: row.class })));
     setJournalTitle(`Journal Entry ${entryNumber}`);
     setShowJournalModal(true);
   };
@@ -1158,7 +1158,7 @@ export default function EnhancedMobileDashboard() {
             {reportType === "pl" ? "P&L Dashboard" : reportType === "cf" ? "Cash Flow Dashboard" : "A/R Aging Report"}
           </h1>
           <p style={{ fontSize: '14px', opacity: 0.9 }}>
-            {reportType === "ar" ? "As of Today" : `${getMonthName(month)} ${year}`} • {properties.length} Customers
+            {reportType === "ar" ? "As of Today" : `${getMonthName(month)} ${year}`} • {properties.length} Properties
           </p>
         </div>
 
@@ -1445,7 +1445,7 @@ export default function EnhancedMobileDashboard() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
               <Target size={20} style={{ color: BRAND_COLORS.accent }} />
               <h3 style={{ fontSize: '18px', fontWeight: '600', color: BRAND_COLORS.accent }}>
-                Customer Insights
+                Property Insights
               </h3>
             </div>
             
@@ -1460,7 +1460,7 @@ export default function EnhancedMobileDashboard() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
                 <Award size={16} style={{ color: BRAND_COLORS.primary }} />
                 <span style={{ fontSize: '14px', fontWeight: '600', color: BRAND_COLORS.primary }}>
-                  Customer Champions
+                  Property Champions
                 </span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
@@ -1748,7 +1748,7 @@ export default function EnhancedMobileDashboard() {
             </div>
           </div>
 
-          {/* Enhanced Customer KPI Boxes */}
+          {/* Enhanced Property KPI Boxes */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
             {properties.map((p) => {
               const isRevenueKing = p.name === revenueKing;
@@ -2178,7 +2178,7 @@ export default function EnhancedMobileDashboard() {
             }}
           >
             <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>
-              Top Customers by {rankingLabels[rankingMetric]}
+              Top Properties by {rankingLabels[rankingMetric]}
             </h2>
             <p style={{ fontSize: '14px', opacity: 0.9 }}>
               {reportType === "ar" ? "As of Today" : `${getMonthName(month)} ${year}`}
@@ -2225,7 +2225,7 @@ export default function EnhancedMobileDashboard() {
             }}
           >
             <ChevronLeft size={20} style={{ marginRight: '4px' }} /> 
-            Back to Customers
+            Back to Properties
           </button>
           
           <div style={{
@@ -2815,7 +2815,7 @@ export default function EnhancedMobileDashboard() {
                     <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#475569' }}>Date</th>
                     <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#475569' }}>Account</th>
                     <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#475569' }}>Memo</th>
-                    <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#475569' }}>Customer</th>
+                    <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#475569' }}>Property</th>
                     <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#475569' }}>Debit</th>
                     <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#475569' }}>Credit</th>
                   </tr>
@@ -3038,7 +3038,7 @@ export default function EnhancedMobileDashboard() {
                     "What's our total revenue this month?"
                   </p>
                   <p style={{ fontSize: '13px', color: BRAND_COLORS.accent, margin: 0, padding: '8px', background: 'rgba(255,255,255,0.8)', borderRadius: '6px' }}>
-                    "Which customer has the highest profit margin?"
+                    "Which property has the highest profit margin?"
                   </p>
                   <p style={{ fontSize: '13px', color: BRAND_COLORS.accent, margin: 0, padding: '8px', background: 'rgba(255,255,255,0.8)', borderRadius: '6px' }}>
                     "Show me overdue receivables"

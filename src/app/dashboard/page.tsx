@@ -322,9 +322,9 @@ const classifyAccount = (accountType, accountDetailType, accountName) => {
   return null
 }
 
-// Hardcoded customers based on actual database data
-const HARDCODED_CUSTOMERS = [
-  "All Customers",
+// Hardcoded properties based on actual database data
+const HARDCODED_PROPERTIES = [
+  "All Properties",
   "Cleveland",
   "Columbus IN",
   "Detroit",
@@ -341,36 +341,36 @@ const HARDCODED_CUSTOMERS = [
   "Wesley",
 ]
 
-// Fetch customers
-const fetchCustomers = async () => {
+// Fetch properties (classes)
+const fetchProperties = async () => {
   try {
     const { data, error } = await supabase
       .from("journal_entry_lines")
-      .select("customer")
-      .not("customer", "is", null)
+      .select("class")
+      .not("class", "is", null)
 
     if (error) {
-      console.error("❌ Customer fetch error:", error)
-      return HARDCODED_CUSTOMERS
+      console.error("❌ Property fetch error:", error)
+      return HARDCODED_PROPERTIES
     }
 
-    const customerValues = data
-      .map((item) => item.customer)
+    const classValues = data
+      .map((item) => item.class)
       .filter((c) => c && c.trim() !== "")
 
-    const uniqueCustomers = [...new Set(customerValues)].sort()
-    const allCustomers = [
-      ...new Set([...HARDCODED_CUSTOMERS.slice(1), ...uniqueCustomers]),
+    const uniqueClasses = [...new Set(classValues)].sort()
+    const allClasses = [
+      ...new Set([...HARDCODED_PROPERTIES.slice(1), ...uniqueClasses]),
     ].sort()
-    return ["All Customers", ...allCustomers]
+    return ["All Properties", ...allClasses]
   } catch (error) {
-    console.error("❌ Customer fetch error:", error)
-    return HARDCODED_CUSTOMERS
+    console.error("❌ Property fetch error:", error)
+    return HARDCODED_PROPERTIES
   }
 }
 
-// ENHANCED: Time series data fetching with Customer Dimension support
-const fetchTimeSeriesData = async (property = "All Customers", monthYear, timePeriod, viewMode, onDataValidation) => {
+// ENHANCED: Time series data fetching with Property Dimension support
+const fetchTimeSeriesData = async (property = "All Properties", monthYear, timePeriod, viewMode, onDataValidation) => {
   try {
     const perfStart = performanceTracker.startTime("fetchTimeSeriesData")
     smartLog("🔍 FETCHING TIME SERIES DATA:", { property, monthYear, timePeriod, viewMode })
@@ -586,10 +586,10 @@ const fetchTimeSeriesData = async (property = "All Customers", monthYear, timePe
       // Supabase might have a default limit, so we'll use a very high limit
       let url = `${SUPABASE_URL}/rest/v1/journal_entry_lines?select=*&date=gte.${range.start}&date=lte.${range.end}&limit=10000`
 
-      // FIXED: For by-property view, NEVER filter by customer - we need ALL customer data
-      // Only filter by customer for non-by-property views
-      if (viewMode !== "by-property" && property !== "All Customers") {
-        url += `&customer=eq.${encodeURIComponent(property)}`
+      // FIXED: For by-property view, NEVER filter by class - we need ALL property data
+      // Only filter by class for non-by-property views
+      if (viewMode !== "by-property" && property !== "All Properties") {
+        url += `&class=eq.${encodeURIComponent(property)}`
       }
 
       smartLog(`🔍 FETCHING URL for ${viewMode} view:`, url)
@@ -617,7 +617,7 @@ const fetchTimeSeriesData = async (property = "All Customers", monthYear, timePe
         if (viewMode === "by-property") {
           // Get available customers from the data
           const propertiesInData = [
-            ...new Set(rawData.map((row) => row.customer).filter((cls) => cls && cls.trim() !== "")),
+            ...new Set(rawData.map((row) => row.class).filter((cls) => cls && cls.trim() !== "")),
           ].sort()
           if (availableProperties.length === 0) {
             availableProperties = propertiesInData
@@ -632,7 +632,7 @@ const fetchTimeSeriesData = async (property = "All Customers", monthYear, timePe
           // Group by account first, then by customer within each account
           const groupedByAccount = rawData.reduce((acc, row) => {
             const accountName = row.account || "Unknown Account"
-            const propertyName = row.customer || "No Customer"
+            const propertyName = row.class || "No Property"
 
             const category = classifyAccount(row.account_type, row.account_detail_type, accountName)
             if (category === null) {
@@ -788,7 +788,7 @@ const fetchTimeSeriesData = async (property = "All Customers", monthYear, timePe
         summary: {
           timePeriod,
           viewMode,
-          property: property === "All Customers" ? "ALL CUSTOMERS" : property,
+          property: property === "All Properties" ? "ALL PROPERTIES" : property,
           dateRanges: [
             {
               start: dateRanges[0].start,
@@ -843,7 +843,7 @@ const fetchTimeSeriesData = async (property = "All Customers", monthYear, timePe
         summary: {
           timePeriod,
           viewMode,
-          property: property === "All Customers" ? "ALL CUSTOMERS" : property,
+          property: property === "All Properties" ? "ALL PROPERTIES" : property,
           dateRanges: [
             {
               start: dateRanges[0].start,
@@ -869,7 +869,7 @@ const fetchTimeSeriesData = async (property = "All Customers", monthYear, timePe
       summary: {
         timePeriod,
         viewMode,
-        property: property === "All Customers" ? "ALL CUSTOMERS" : property,
+        property: property === "All Properties" ? "ALL PROPERTIES" : property,
         dateRanges: dateRanges,
         totalEntriesProcessed,
         periodsGenerated: dateRanges.length,
@@ -936,7 +936,7 @@ export default function MobileResponsiveFinancialsPage() {
   const [viewMode, setViewMode] = useState("by-property") // Default to by-customer
   const [notification, setNotification] = useState({ show: false, message: "", type: "info" })
   const [timePeriodDropdownOpen, setTimePeriodDropdownOpen] = useState(false)
-  const [selectedProperties, setSelectedProperties] = useState(new Set(["All Customers"]))
+  const [selectedProperties, setSelectedProperties] = useState(new Set(["All Properties"]))
   const [propertyDropdownOpen, setPropertyDropdownOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
@@ -959,7 +959,7 @@ export default function MobileResponsiveFinancialsPage() {
   const [isLoadingData, setIsLoadingData] = useState(false)
   const [realData, setRealData] = useState(null)
   const [dataError, setDataError] = useState(null)
-  const [availableProperties, setAvailableProperties] = useState(HARDCODED_CUSTOMERS)
+  const [availableProperties, setAvailableProperties] = useState(HARDCODED_PROPERTIES)
   const [selectedAccountDetails, setSelectedAccountDetails] = useState(null)
   const [timeSeriesData, setTimeSeriesData] = useState(null)
 
@@ -969,8 +969,8 @@ export default function MobileResponsiveFinancialsPage() {
   // Mobile-specific states
   const [tableMode, setTableMode] = useState("summary") // Default to summary
   const [activeKPICard, setActiveKPICard] = useState(null)
-  const [selectedCustomerForPL, setSelectedCustomerForPL] = useState(null)
-  const [showCustomerPL, setShowCustomerPL] = useState(false)
+  const [selectedPropertyForPL, setSelectedPropertyForPL] = useState(null)
+  const [showPropertyPL, setShowPropertyPL] = useState(false)
   const [showTransactionDetail, setShowTransactionDetail] = useState(false)
   const [showCompanyPL, setShowCompanyPL] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -1036,20 +1036,20 @@ export default function MobileResponsiveFinancialsPage() {
                 value={viewMode}
                 onChange={(e) => setViewMode(e.target.value)}
               >
-                <option value="by-property">By Customer</option>
+                <option value="by-property">By Property</option>
                 <option value="total">Total</option>
                 <option value="detailed">Detailed</option>
               </select>
             </div>
 
-            {/* Customers multiselect */}
+            {/* Properties multiselect */}
             <div>
-              <div className="text-xs text-gray-600 mb-1">Customers</div>
+              <div className="text-xs text-gray-600 mb-1">Properties</div>
               <button
                 className="w-full rounded-md border px-3 py-2 text-sm text-left"
                 onClick={() => setPropertyDropdownOpen((v) => !v)}
               >
-                {getSelectedCustomersText()}
+                {getSelectedPropertiesText()}
               </button>
 
               {propertyDropdownOpen && (
@@ -1147,9 +1147,9 @@ export default function MobileResponsiveFinancialsPage() {
     try {
       setIsLoadingData(true)
 
-      const customers = await fetchCustomers()
-      smartLog("🏠 Available customers loaded:", customers)
-      setAvailableProperties(customers)
+      const properties = await fetchProperties()
+      smartLog("🏠 Available properties loaded:", properties)
+      setAvailableProperties(properties)
 
       await loadRealFinancialData()
     } catch (error) {
@@ -1165,9 +1165,9 @@ export default function MobileResponsiveFinancialsPage() {
       setIsLoadingData(true)
       setDataError(null)
 
-      // FIXED: For by-property view, always use 'All Customers' to get all data
-      let propertyFilter = "All Customers"
-      if (viewMode !== "by-property" && selectedProperties.size > 0 && !selectedProperties.has("All Customers")) {
+      // FIXED: For by-property view, always use 'All Properties' to get all data
+      let propertyFilter = "All Properties"
+      if (viewMode !== "by-property" && selectedProperties.size > 0 && !selectedProperties.has("All Properties")) {
         propertyFilter = Array.from(selectedProperties)[0]
       }
 
@@ -1178,7 +1178,7 @@ export default function MobileResponsiveFinancialsPage() {
         timePeriod,
         viewMode,
         note:
-          viewMode === "by-property" ? "FORCING All Customers for by-customer view" : "Using selected customer filter",
+          viewMode === "by-property" ? "FORCING All Properties for by-customer view" : "Using selected customer filter",
       })
 
       const timeSeriesResult = await fetchTimeSeriesData(
@@ -1200,7 +1200,7 @@ export default function MobileResponsiveFinancialsPage() {
       const customerText =
         viewMode === "by-property"
           ? "all customers (by-customer view)"
-          : selectedProperties.has("All Customers")
+          : selectedProperties.has("All Properties")
             ? "all customers"
             : `${selectedProperties.size} selected customers`
 
@@ -1220,11 +1220,11 @@ export default function MobileResponsiveFinancialsPage() {
   const handlePropertyToggle = (property) => {
     const newSelected = new Set(selectedProperties)
 
-    if (property === "All Customers") {
+    if (property === "All Properties") {
       newSelected.clear()
-      newSelected.add("All Customers")
+      newSelected.add("All Properties")
     } else {
-      newSelected.delete("All Customers")
+      newSelected.delete("All Properties")
 
       if (newSelected.has(property)) {
         newSelected.delete(property)
@@ -1233,22 +1233,22 @@ export default function MobileResponsiveFinancialsPage() {
       }
 
       if (newSelected.size === 0) {
-        newSelected.add("All Customers")
+        newSelected.add("All Properties")
       }
     }
 
     setSelectedProperties(newSelected)
-    smartLog("🏠 Customer selection changed:", Array.from(newSelected))
+    smartLog("🏠 Property selection changed:", Array.from(newSelected))
   }
 
-  const getSelectedCustomersText = () => {
-    if (selectedProperties.has("All Customers") || selectedProperties.size === 0) {
-      return "All Customers"
+  const getSelectedPropertiesText = () => {
+    if (selectedProperties.has("All Properties") || selectedProperties.size === 0) {
+      return "All Properties"
     }
     if (selectedProperties.size === 1) {
       return Array.from(selectedProperties)[0]
     }
-    return `${selectedProperties.size} Customers Selected`
+    return `${selectedProperties.size} Properties Selected`
   }
 
   // Helper functions
@@ -1752,7 +1752,7 @@ export default function MobileResponsiveFinancialsPage() {
       .filter((item) => item.value > 0)
   }
 
-  const generateCustomerChartData = () => {
+  const generatePropertyChartData = () => {
     // Only show customer data if we have it
     if (viewMode === "by-property" && timeSeriesData?.availableProperties) {
       return timeSeriesData.availableProperties
@@ -1812,7 +1812,7 @@ export default function MobileResponsiveFinancialsPage() {
       currentData.forEach((account) => {
         if (account.entries) {
           account.entries.forEach((entry) => {
-            const property = entry.customer || "No Customer"
+            const property = entry.class || "No Property"
             if (!propertyData[property]) {
               propertyData[property] = { revenue: 0, cogs: 0, opex: 0, otherIncome: 0, otherExpenses: 0 }
             }
@@ -1971,7 +1971,7 @@ export default function MobileResponsiveFinancialsPage() {
       achievements.push({
         id: "portfolio-powerhouse",
         title: "🌟 Portfolio Powerhouse",
-        description: `${profitableProperties.length} of ${propertyData.length} customers (${profitablePercentage.toFixed(0)}%) are profitable`,
+        description: `${profitableProperties.length} of ${propertyData.length} properties (${profitablePercentage.toFixed(0)}%) are profitable`,
         type: "info",
         metric: profitableProperties.length,
       })
@@ -1982,7 +1982,7 @@ export default function MobileResponsiveFinancialsPage() {
       achievements.push({
         id: "efficiency-expert",
         title: "⚡ Efficiency Expert",
-        description: `${highMarginProperties.length} customers achieve 20%+ profit margins`,
+        description: `${highMarginProperties.length} properties achieve 20%+ profit margins`,
         type: "info",
         metric: highMarginProperties.length,
       })
@@ -2005,7 +2005,7 @@ export default function MobileResponsiveFinancialsPage() {
       achievements.push({
         id: "needs-attention",
         title: "⚠️ Needs Attention",
-        description: `${lossProperties.length} customers need optimization`,
+        description: `${lossProperties.length} properties need optimization`,
         type: "warning",
         metric: lossProperties.length,
       })
@@ -2017,7 +2017,7 @@ export default function MobileResponsiveFinancialsPage() {
       achievements.push({
         id: "consistent-performer",
         title: "🎯 Consistent Performer",
-        description: `${consistentProperties.length} customers maintain steady 10-30% margins`,
+        description: `${consistentProperties.length} properties maintain steady 10-30% margins`,
         type: "info",
         metric: consistentProperties.length,
       })
@@ -2210,7 +2210,7 @@ export default function MobileResponsiveFinancialsPage() {
           <div className="flex justify-between items-center">
             <div>
               <h3 className="text-xl font-semibold text-gray-900">
-                Profit & Loss Statement {viewMode === "by-property" ? "(By Customer)" : "(Total)"}
+                Profit & Loss Statement {viewMode === "by-property" ? "(By Property)" : "(Total)"}
               </h3>
               <div className="mt-2 text-sm text-gray-600">
                 Showing {timePeriod.toLowerCase()} {viewMode} view for {selectedMonth}
@@ -2420,11 +2420,11 @@ export default function MobileResponsiveFinancialsPage() {
                 <div className="text-xs text-gray-500">{kpis.netMargin.toFixed(1)}% margin</div>
               </div>
               <div className="text-center">
-                <div className="text-sm text-gray-600 mb-1">📊 Customers</div>
+                <div className="text-sm text-gray-600 mb-1">📊 Properties</div>
                 <div className="text-xl font-bold text-purple-600">
                   {timeSeriesData?.availableProperties?.length || 0}
                 </div>
-                <div className="text-xs text-gray-500">Active customers</div>
+                <div className="text-xs text-gray-500">Active properties</div>
               </div>
             </div>
           </div>
@@ -2438,9 +2438,9 @@ export default function MobileResponsiveFinancialsPage() {
     return renderDesktopPLTable()
   }
 
-  // Add the missing renderSideBySideCustomerCards function
-  const renderSideBySideCustomerCards = () => {
-    return renderMobileCustomerCards()
+  // Add the missing renderSideBySidePropertyCards function
+  const renderSideBySidePropertyCards = () => {
+    return renderMobilePropertyCards()
   }
 
   const renderCompanyScorecard = () => {
@@ -2492,10 +2492,10 @@ export default function MobileResponsiveFinancialsPage() {
             </div>
           </div>
 
-          {/* Customer count */}
+          {/* Property count */}
           <div className="mt-4 pt-4 border-t border-white border-opacity-20">
             <div className="flex justify-between items-center text-sm">
-              <span className="opacity-75">Customers:</span>
+              <span className="opacity-75">Properties:</span>
               <span className="font-semibold">{timeSeriesData?.availableProperties?.length || 0}</span>
             </div>
             <div className="flex justify-between items-center text-sm mt-1">
@@ -2513,12 +2513,12 @@ export default function MobileResponsiveFinancialsPage() {
   // Mobile charts view
   const renderMobileCharts = () => (
     <div className="space-y-6">
-      {/* Customer Performance Chart */}
-      {generateCustomerChartData().length > 0 && (
+      {/* Property Performance Chart */}
+      {generatePropertyChartData().length > 0 && (
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           <div className="p-4 border-b border-gray-200">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900">Customer Performance</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Property Performance</h3>
               <div className="flex items-center gap-2">
                 <div className="flex rounded-lg border border-gray-300 overflow-hidden">
                   <button
@@ -2569,7 +2569,7 @@ export default function MobileResponsiveFinancialsPage() {
               {propertyChartView === "pie" ? (
                 <RechartsPieChart>
                   <Pie
-                    data={generateCustomerChartData()}
+                    data={generatePropertyChartData()}
                     cx="50%"
                     cy="50%"
                     outerRadius={80}
@@ -2579,7 +2579,7 @@ export default function MobileResponsiveFinancialsPage() {
                     label={({ name, percent }) => (percent > 0.1 ? `${(percent * 100).toFixed(0)}%` : "")}
                     labelLine={false}
                   >
-                    {generateCustomerChartData().map((entry, index) => (
+                    {generatePropertyChartData().map((entry, index) => (
                       <Cell
                         key={`cell-${index}`}
                         fill={COLORS[index % COLORS.length]}
@@ -2645,7 +2645,7 @@ export default function MobileResponsiveFinancialsPage() {
                   />
                 </RechartsPieChart>
               ) : (
-                <BarChart data={generateCustomerChartData()}>
+                <BarChart data={generatePropertyChartData()}>
                   <CartesianGrid strokeDasharray="2 2" stroke="#f1f5f9" />
                   <XAxis dataKey="name" hide />
                   <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
@@ -2688,20 +2688,20 @@ export default function MobileResponsiveFinancialsPage() {
     </div>
   )
 
-  const renderMobileCustomerCards = () => {
+  const renderMobilePropertyCards = () => {
     if (!timeSeriesData?.availableProperties || timeSeriesData.availableProperties.length === 0) {
       return (
         <div className="text-center py-8 text-gray-500">
           <div className="text-center">
             <PieChart className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-            <p className="text-lg font-medium text-gray-600">No customer data available</p>
-            <p className="text-sm mt-2 text-gray-500">Switch to "By Customer" view to see customer breakdown</p>
+            <p className="text-lg font-medium text-gray-600">No property data available</p>
+            <p className="text-sm mt-2 text-gray-500">Switch to "By Property" view to see property breakdown</p>
           </div>
         </div>
       )
     }
 
-    // Get customer data and sort by profit (best performers first)
+    // Get property data and sort by profit (best performers first)
     const propertyData = timeSeriesData.availableProperties
       .map((property) => {
         const revenue = currentData
@@ -2748,16 +2748,16 @@ export default function MobileResponsiveFinancialsPage() {
         <div className="p-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Customer Performance</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Property Performance</h3>
               <div className="text-sm text-gray-600 mt-1">
-                {timePeriod} period • {propertyData.length} customers • Sorted by profit
+                {timePeriod} period • {propertyData.length} properties • Sorted by profit
               </div>
             </div>
             <div className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded-full">🏢 Tap to view P&L</div>
           </div>
         </div>
 
-        {/* Horizontal scrolling customer cards */}
+        {/* Horizontal scrolling property cards */}
         <div className="p-4">
           <div className="flex gap-4 overflow-x-auto pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             {propertyData.map((property, index) => (
@@ -2765,15 +2765,15 @@ export default function MobileResponsiveFinancialsPage() {
                 key={property.name}
                 className="flex-shrink-0 w-36 bg-gradient-to-br from-white to-gray-50 rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-all cursor-pointer"
                 onClick={() => {
-                  setSelectedCustomerForPL(property)
-                  setShowCustomerPL(true)
+                  setSelectedPropertyForPL(property)
+                  setShowPropertyPL(true)
                 }}
                 style={{
                   minWidth: "144px",
                   boxShadow: index === 0 ? `0 4px 6px -1px ${BRAND_COLORS.primary}33` : undefined,
                 }}
               >
-                {/* Customer name */}
+                {/* Property name */}
                 <div className="text-sm font-semibold text-gray-900 mb-3 truncate" title={property.name}>
                   {property.name}
                   {index === 0 && <span className="ml-1 text-xs">🏆</span>}
@@ -2814,27 +2814,27 @@ export default function MobileResponsiveFinancialsPage() {
 
         {/* Scroll indicator */}
         <div className="px-4 pb-4">
-          <div className="text-xs text-gray-500 text-center">👈 Scroll horizontally to see all customers</div>
+          <div className="text-xs text-gray-500 text-center">👈 Scroll horizontally to see all properties</div>
         </div>
       </div>
     )
   }
 
-  // Customer P&L modal/screen
-  const renderCustomerPLModal = () => {
-    if (!showCustomerPL || !selectedCustomerForPL) return null
+  // Property P&L modal/screen
+  const renderPropertyPLModal = () => {
+    if (!showPropertyPL || !selectedPropertyForPL) return null
 
-    const customer = selectedCustomerForPL
+    const property = selectedPropertyForPL
 
-    // Get detailed P&L data for this customer
-    const customerPLData = currentData
+    // Get detailed P&L data for this property
+    const propertyPLData = currentData
       .filter(
-        (account) => account.propertyTotals?.[customer.name] && account.propertyTotals[customer.name] !== 0,
+        (account) => account.propertyTotals?.[property.name] && account.propertyTotals[property.name] !== 0,
       )
       .map((account) => ({
         ...account,
-        total: account.propertyTotals[customer.name],
-        entries: account.propertyEntries?.[customer.name] || [],
+        total: account.propertyTotals[property.name],
+        entries: account.propertyEntries?.[property.name] || [],
       }))
       .sort((a, b) => {
         const categoryOrder = { Revenue: 0, COGS: 1, "Operating Expenses": 2, "Other Income": 3, "Other Expenses": 4 }
@@ -2850,11 +2850,11 @@ export default function MobileResponsiveFinancialsPage() {
           <div className="sticky top-0 bg-white border-b border-gray-200 p-4 z-10">
             <div className="flex justify-between items-center">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">{customer.name}</h2>
+                <h2 className="text-xl font-bold text-gray-900">{property.name}</h2>
                 <div className="text-sm text-gray-600">{timePeriod} P&L Statement</div>
               </div>
               <button
-                onClick={() => setShowCustomerPL(false)}
+                onClick={() => setShowPropertyPL(false)}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <X className="w-6 h-6" />
@@ -2865,16 +2865,16 @@ export default function MobileResponsiveFinancialsPage() {
             <div className="mt-4 grid grid-cols-3 gap-4">
               <div className="text-center">
                 <div className="text-sm text-gray-500">Revenue</div>
-                <div className="text-lg font-bold text-green-600">{formatCurrency(customer.revenue)}</div>
+                <div className="text-lg font-bold text-green-600">{formatCurrency(property.revenue)}</div>
               </div>
               <div className="text-center">
                 <div className="text-sm text-gray-500">Expenses</div>
-                <div className="text-lg font-bold text-red-600">{formatCurrency(customer.expenses)}</div>
+                <div className="text-lg font-bold text-red-600">{formatCurrency(property.expenses)}</div>
               </div>
               <div className="text-center">
                 <div className="text-sm text-gray-500">Profit</div>
-                <div className={`text-lg font-bold ${customer.profit >= 0 ? "text-blue-600" : "text-red-600"}`}>
-                  {formatCurrency(customer.profit)}
+                <div className={`text-lg font-bold ${property.profit >= 0 ? "text-blue-600" : "text-red-600"}`}>
+                  {formatCurrency(property.profit)}
                 </div>
               </div>
             </div>
@@ -2883,7 +2883,7 @@ export default function MobileResponsiveFinancialsPage() {
           {/* P&L Details */}
           <div className="p-4 space-y-4">
             {categories.map((category) => {
-              const categoryAccounts = customerPLData.filter((account) => account.category === category)
+              const categoryAccounts = propertyPLData.filter((account) => account.category === category)
               if (categoryAccounts.length === 0) return null
 
               const categoryTotal = categoryAccounts.reduce((sum, account) => sum + account.total, 0)
@@ -3018,7 +3018,7 @@ export default function MobileResponsiveFinancialsPage() {
 
                       <div className="flex justify-between text-sm text-gray-600">
                         <span>ID: {entry.id}</span>
-                        <span>Customer: {entry.customer || "No Customer"}</span>
+                        <span>Property: {entry.class || "No Property"}</span>
                       </div>
                     </div>
                   ))}
@@ -3121,7 +3121,7 @@ export default function MobileResponsiveFinancialsPage() {
                       {entry.memo && <div className="mb-2 text-xs text-gray-700">{entry.memo}</div>}
 
                       <div className="text-xs text-gray-600">
-                        <strong>Customer:</strong> {entry.customer || "No Customer"}
+                        <strong>Property:</strong> {entry.class || "No Property"}
                       </div>
                     </div>
                   ))}
@@ -3201,14 +3201,14 @@ export default function MobileResponsiveFinancialsPage() {
                 ))}
               </select>
 
-              {/* Customer Dropdown */}
+              {/* Property Dropdown */}
               <div className="relative">
                 <button
                   onClick={() => setPropertyDropdownOpen(!propertyDropdownOpen)}
                   className="flex items-center justify-between w-56 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-500 focus:outline-none focus:ring-2 transition-all"
                   style={{ "--tw-ring-color": BRAND_COLORS.secondary + "33" } as React.CSSProperties}
                 >
-                  <span className="truncate">{getSelectedCustomersText()}</span>
+                  <span className="truncate">{getSelectedPropertiesText()}</span>
                   <ChevronDown
                     className={`w-4 h-4 ml-2 transition-transform ${propertyDropdownOpen ? "rotate-180" : ""}`}
                   />
@@ -3217,7 +3217,7 @@ export default function MobileResponsiveFinancialsPage() {
                 {propertyDropdownOpen && (
                   <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
                     <div className="p-2 text-xs text-gray-500 border-b border-gray-100">
-                      Select customers to analyze
+                      Select properties to analyze
                     </div>
                     {availableProperties.map((property) => (
                       <div
@@ -3279,9 +3279,9 @@ export default function MobileResponsiveFinancialsPage() {
                     viewMode === "by-property" ? "text-white" : "bg-white text-gray-700 hover:bg-gray-50"
                   }`}
                   style={{ backgroundColor: viewMode === "by-property" ? BRAND_COLORS.primary : undefined }}
-                  title="View P&L with customers as columns"
+                  title="View P&L with properties as columns"
                 >
-                  By Customer
+                  By Property
                 </button>
               </div>
 
@@ -3366,11 +3366,11 @@ export default function MobileResponsiveFinancialsPage() {
 
         {/* Main Content Grid */}
         {deviceType === "mobile" ? (
-          // Mobile: Customer cards with drill-down
+// Mobile: Property cards with drill-down
           <div className="space-y-6">
             {renderCompanyScorecard()}
             {renderAchievementBadges()}
-            {renderSideBySideCustomerCards()}
+            {renderSideBySidePropertyCards()}
           </div>
         ) : (
           // Tablet/Desktop: Charts on top, P&L below
@@ -3396,8 +3396,8 @@ export default function MobileResponsiveFinancialsPage() {
       {/* Company P&L Modal - Mobile Only */}
       {deviceType === "mobile" && renderCompanyPLModal()}
 
-      {/* Mobile Customer P&L Modal */}
-      {renderCustomerPLModal()}
+      {/* Mobile Property P&L Modal */}
+      {renderPropertyPLModal()}
 
       {/* Mobile Transaction Detail Modal */}
       {renderTransactionDetailModal()}

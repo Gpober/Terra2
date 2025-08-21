@@ -58,7 +58,6 @@ type FinancialTransaction = {
   created: string;
   created_by: string;
   name: string;
-  customer: string | null;
   vendor: string | null;
   employee: string | null;
   class: string | null;
@@ -95,7 +94,7 @@ interface JournalEntryLine {
 }
 
 type TimePeriod = "Monthly" | "Quarterly" | "YTD" | "Trailing 12" | "Custom";
-type ViewMode = "Total" | "Detail" | "Customer";
+type ViewMode = "Total" | "Detail" | "Property";
 type NotificationState = {
   show: boolean;
   message: string;
@@ -221,7 +220,7 @@ export default function FinancialsPage() {
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
   const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
   const [selectedProperties, setSelectedProperties] = useState<Set<string>>(
-    new Set(["All Customers"]),
+    new Set(["All Properties"]),
   );
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
@@ -232,7 +231,7 @@ export default function FinancialsPage() {
   const [plAccounts, setPlAccounts] = useState<PLAccount[]>([]);
   const [dataError, setDataError] = useState<string | null>(null);
   const [availableProperties, setAvailableProperties] = useState<string[]>([
-    "All Customers",
+    "All Properties",
   ]);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [transactionModalTitle, setTransactionModalTitle] = useState("");
@@ -493,7 +492,7 @@ export default function FinancialsPage() {
     try {
       const { startDate, endDate } = calculateDateRange();
       const selectedProperty =
-        Array.from(selectedProperties)[0] || "All Customers";
+        Array.from(selectedProperties)[0] || "All Properties";
 
       smartLog(`🔍 TIMEZONE-INDEPENDENT P&L DATA FETCH`);
       smartLog(`📅 Period: ${startDate} to ${endDate}`);
@@ -511,12 +510,12 @@ export default function FinancialsPage() {
          account_type, 
          debit, 
          credit, 
-         memo, 
-         customer, 
-         vendor, 
-         name, 
-         entry_bank_account, 
-         normal_balance, 
+         memo,
+         class,
+         vendor,
+         name,
+         entry_bank_account,
+         normal_balance,
          report_category,
          is_cash_account,
          detail_type,
@@ -528,8 +527,8 @@ export default function FinancialsPage() {
         .order("date", { ascending: true });
 
       // Apply property filter
-      if (selectedProperty !== "All Customers") {
-        query = query.eq("customer", selectedProperty);
+      if (selectedProperty !== "All Properties") {
+        query = query.eq("class", selectedProperty);
       }
 
       const { data: allTransactions, error } = await query;
@@ -570,15 +569,15 @@ export default function FinancialsPage() {
       smartLog(`📈 Filtered to ${plTransactions.length} P&L transactions`);
       smartLog(`🔍 Sample P&L transactions:`, plTransactions.slice(0, 5));
 
-      // Get unique customers for filter dropdown using 'customer' field
+      // Get unique classes for filter dropdown using 'class' field
       const properties = new Set<string>();
       plTransactions.forEach((tx) => {
-        if (tx.customer && tx.customer.trim()) {
-          properties.add(tx.customer.trim());
+        if (tx.class && tx.class.trim()) {
+          properties.add(tx.class.trim());
         }
       });
       setAvailableProperties([
-        "All Customers",
+        "All Properties",
         ...Array.from(properties).sort(),
       ]);
 
@@ -1226,8 +1225,8 @@ export default function FinancialsPage() {
   const getColumnHeaders = () => {
     if (viewMode === "Total") {
       return [];
-    } else if (viewMode === "Customer") {
-      return availableProperties.filter((p) => p !== "All Customers");
+    } else if (viewMode === "Property") {
+      return availableProperties.filter((p) => p !== "All Properties");
     } else if (viewMode === "Detail") {
       // For Detail view, show months in the date range using timezone-independent method
       const { startDate, endDate } = calculateDateRange();
@@ -1276,10 +1275,10 @@ export default function FinancialsPage() {
       ];
     }
 
-    if (viewMode === "Customer") {
+    if (viewMode === "Property") {
       // Filter transactions by property and calculate total
       const filteredTransactions = transactions.filter(
-        (tx) => tx.customer === header,
+        (tx) => tx.class === header,
       );
       const credits = filteredTransactions.reduce((sum, tx) => {
         const creditValue = tx.credit
@@ -1372,9 +1371,9 @@ export default function FinancialsPage() {
       });
     }
 
-    // Filter by property if specified (Customer view)
-    if (property && viewMode === "Customer") {
-      transactions = transactions.filter((tx) => tx.customer === property);
+    // Filter by property if specified (Property view)
+    if (property && viewMode === "Property") {
+      transactions = transactions.filter((tx) => tx.class === property);
     }
 
     let title = subAccount
@@ -1678,7 +1677,7 @@ export default function FinancialsPage() {
                   } as React.CSSProperties
                 }
               >
-                Customers: {Array.from(selectedProperties).join(", ")}
+                Properties: {Array.from(selectedProperties).join(", ")}
                 <ChevronDown className="w-4 h-4 ml-2" />
               </button>
 
@@ -1695,17 +1694,17 @@ export default function FinancialsPage() {
                         onChange={(e) => {
                           const newSelected = new Set(selectedProperties);
                           if (e.target.checked) {
-                            if (property === "All Customers") {
+                            if (property === "All Properties") {
                               newSelected.clear();
-                              newSelected.add("All Customers");
+                              newSelected.add("All Properties");
                             } else {
-                              newSelected.delete("All Customers");
+                              newSelected.delete("All Properties");
                               newSelected.add(property);
                             }
                           } else {
                             newSelected.delete(property);
                             if (newSelected.size === 0) {
-                              newSelected.add("All Customers");
+                              newSelected.add("All Properties");
                             }
                           }
                           setSelectedProperties(newSelected);
@@ -1750,20 +1749,20 @@ export default function FinancialsPage() {
               >
                 Detail
               </button>
-<button
-  onClick={() => setViewMode("Customer")}
-  className={`px-4 py-2 text-sm font-medium rounded-r-lg border-l border-gray-300 ${
-    viewMode === "Customer"
-      ? "text-white"
-      : "text-gray-700 hover:bg-gray-50"
-  }`}
-  style={{
-    backgroundColor:
-      viewMode === "Customer" ? BRAND_COLORS.primary : undefined,  // ← Changed from "Customer" to "Customer"
-  }}
->
-  Customer  {/* ← Changed from "Customer" to "Customer" */}
-</button>
+              <button
+                onClick={() => setViewMode("Property")}
+                className={`px-4 py-2 text-sm font-medium rounded-r-lg border-l border-gray-300 ${
+                  viewMode === "Property"
+                    ? "text-white"
+                    : "text-gray-700 hover:bg-gray-50"
+                }`}
+                style={{
+                  backgroundColor:
+                    viewMode === "Property" ? BRAND_COLORS.primary : undefined,
+                }}
+              >
+                Property
+              </button>
             </div>
 
             {/* Custom Date Range */}
@@ -1944,7 +1943,7 @@ export default function FinancialsPage() {
                   {plAccounts.length} accounts • Timezone-independent date
                   handling • Using account_type for P&L classification
                   {viewMode === "Detail" && " • Monthly breakdown"}
-                  {viewMode === "Customer" && " • By property"}
+                  {viewMode === "Property" && " • By property"}
                 </p>
               </div>
 
@@ -2056,7 +2055,7 @@ export default function FinancialsPage() {
                                       viewMode === "Detail"
                                         ? header
                                         : undefined,
-                                      viewMode === "Customer" ? header : undefined,
+                                      viewMode === "Property" ? header : undefined,
                                       !expandedAccounts.has(
                                         group.account.account,
                                       ), // Show combined if collapsed
@@ -2132,7 +2131,7 @@ export default function FinancialsPage() {
                                           viewMode === "Detail"
                                             ? header
                                             : undefined,
-                                          viewMode === "Customer"
+                                          viewMode === "Property"
                                             ? header
                                             : undefined,
                                         )
@@ -2272,7 +2271,7 @@ export default function FinancialsPage() {
                                       viewMode === "Detail"
                                         ? header
                                         : undefined,
-                                      viewMode === "Customer" ? header : undefined,
+                                      viewMode === "Property" ? header : undefined,
                                       !expandedAccounts.has(
                                         group.account.account,
                                       ), // Show combined if collapsed
@@ -2348,7 +2347,7 @@ export default function FinancialsPage() {
                                           viewMode === "Detail"
                                             ? header
                                             : undefined,
-                                          viewMode === "Customer"
+                                          viewMode === "Property"
                                             ? header
                                             : undefined,
                                         )
@@ -2604,7 +2603,7 @@ export default function FinancialsPage() {
                                       viewMode === "Detail"
                                         ? header
                                         : undefined,
-                                      viewMode === "Customer" ? header : undefined,
+                                      viewMode === "Property" ? header : undefined,
                                       !expandedAccounts.has(
                                         group.account.account,
                                       ), // Show combined if collapsed
@@ -2680,7 +2679,7 @@ export default function FinancialsPage() {
                                           viewMode === "Detail"
                                             ? header
                                             : undefined,
-                                          viewMode === "Customer"
+                                          viewMode === "Property"
                                             ? header
                                             : undefined,
                                         )
@@ -3049,7 +3048,7 @@ export default function FinancialsPage() {
                           <td className="px-6 py-4 text-sm text-gray-900">
                             {transaction.name ||
                               transaction.vendor ||
-                              transaction.customer ||
+                              transaction.class ||
                               "N/A"}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-500">
@@ -3063,9 +3062,9 @@ export default function FinancialsPage() {
                             {formatCurrency(Math.abs(netAmount))}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
-                            {transaction.customer && (
+                            {transaction.class && (
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                {transaction.customer}
+                                {transaction.class}
                               </span>
                             )}
                           </td>
@@ -3104,9 +3103,9 @@ export default function FinancialsPage() {
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Memo
                     </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Customer
-                    </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Property
+                      </th>
                     <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Debit
                     </th>
@@ -3123,7 +3122,7 @@ export default function FinancialsPage() {
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-900">{line.account}</td>
                       <td className="px-4 py-2 text-sm text-gray-500">{line.memo || ""}</td>
-                      <td className="px-4 py-2 text-sm text-gray-500">{line.customer || ""}</td>
+                      <td className="px-4 py-2 text-sm text-gray-500">{line.class || ""}</td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-right text-red-600">
                         {formatCurrency(Number.parseFloat(line.debit?.toString() || "0"))}
                       </td>
