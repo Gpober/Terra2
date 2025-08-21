@@ -150,11 +150,11 @@ export default function FinancialOverviewPage() {
   const [timePeriodDropdownOpen, setTimePeriodDropdownOpen] = useState(false);
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
   const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
-  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
+  const [propertyDropdownOpen, setPropertyDropdownOpen] = useState(false);
   const timePeriodDropdownRef = useRef<HTMLDivElement>(null);
   const monthDropdownRef = useRef<HTMLDivElement>(null);
   const yearDropdownRef = useRef<HTMLDivElement>(null);
-  const customerDropdownRef = useRef<HTMLDivElement>(null);
+  const propertyDropdownRef = useRef<HTMLDivElement>(null);
   const [financialData, setFinancialData] = useState(null);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -185,18 +185,18 @@ export default function FinancialOverviewPage() {
   const [propertyChartMetric, setPropertyChartMetric] = useState<
     "income" | "gp" | "ni" | "expenses" | "cogs"
   >("income");
-  const [customerChartType, setCustomerChartType] = useState<"pie" | "bar">(
+  const [propertyChartType, setPropertyChartType] = useState<"pie" | "bar">(
     "pie",
   );
   const [loadingTrend, setLoadingTrend] = useState(false);
   const [loadingProperty, setLoadingProperty] = useState(false);
   const [trendError, setTrendError] = useState<string | null>(null);
   const [propertyError, setPropertyError] = useState<string | null>(null);
-  const [selectedCustomers, setSelectedCustomers] = useState<Set<string>>(
-    new Set(["All Customers"]),
+  const [selectedProperties, setSelectedProperties] = useState<Set<string>>(
+    new Set(["All Properties"]),
   );
-  const [availableCustomers, setAvailableCustomers] = useState<string[]>([
-    "All Customers",
+  const [availableProperties, setAvailableProperties] = useState<string[]>([
+    "All Properties",
   ]);
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
@@ -354,10 +354,10 @@ export default function FinancialOverviewPage() {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        customerDropdownRef.current &&
-        !customerDropdownRef.current.contains(event.target as Node)
+        propertyDropdownRef.current &&
+        !propertyDropdownRef.current.contains(event.target as Node)
       ) {
-        setCustomerDropdownOpen(false);
+        setPropertyDropdownOpen(false);
       }
       if (
         timePeriodDropdownRef.current &&
@@ -385,8 +385,8 @@ export default function FinancialOverviewPage() {
     };
   }, []);
 
-  // Load available customers for filter dropdown
-  const fetchAvailableCustomers = async () => {
+  // Load available properties for filter dropdown
+  const fetchAvailableProperties = async () => {
     try {
       const { data, error } = await supabase
         .from("journal_entry_lines")
@@ -399,14 +399,14 @@ export default function FinancialOverviewPage() {
           customers.add(row.customer.trim());
         }
       });
-      setAvailableCustomers(["All Customers", ...Array.from(customers).sort()]);
+      setAvailableProperties(["All Properties", ...Array.from(customers).sort()]);
     } catch (err) {
-      console.error("Error fetching customers:", err);
+      console.error("Error fetching properties:", err);
     }
   };
 
   useEffect(() => {
-    fetchAvailableCustomers();
+    fetchAvailableProperties();
   }, []);
 
   // Fetch financial data from Supabase (same connection as other pages)
@@ -418,8 +418,8 @@ export default function FinancialOverviewPage() {
       const { startDate, endDate } = calculateDateRange();
       const monthIndex = monthsList.indexOf(selectedMonth);
       const year = Number.parseInt(selectedYear);
-      const selectedCustomerList = Array.from(selectedCustomers).filter(
-        (c) => c !== "All Customers",
+      const selectedPropertyList = Array.from(selectedProperties).filter(
+        (c) => c !== "All Properties",
       );
 
       console.log(
@@ -427,10 +427,10 @@ export default function FinancialOverviewPage() {
       );
       console.log(`📅 Date range: ${startDate} to ${endDate}`);
       console.log(
-        `🏢 Customer Filter: ${
-          selectedCustomerList.length > 0
-            ? selectedCustomerList.join(", ")
-            : "All Customers"
+        `🏢 Property Filter: ${
+          selectedPropertyList.length > 0
+            ? selectedPropertyList.join(", ")
+            : "All Properties"
         }`,
       );
 
@@ -462,8 +462,8 @@ export default function FinancialOverviewPage() {
         .lte("date", endDate)
         .order("date", { ascending: true });
 
-      if (selectedCustomerList.length > 0) {
-        currentQuery = currentQuery.in("customer", selectedCustomerList);
+      if (selectedPropertyList.length > 0) {
+        currentQuery = currentQuery.in("customer", selectedPropertyList);
       }
 
       const { data: currentTransactions, error: currentError } =
@@ -521,8 +521,8 @@ export default function FinancialOverviewPage() {
         .lte("date", prevEndDate)
         .order("date", { ascending: true });
 
-      if (selectedCustomerList.length > 0) {
-        prevQuery = prevQuery.in("customer", selectedCustomerList);
+      if (selectedPropertyList.length > 0) {
+        prevQuery = prevQuery.in("customer", selectedPropertyList);
       }
 
       const { data: prevTransactions, error: prevError } = await prevQuery;
@@ -585,8 +585,8 @@ export default function FinancialOverviewPage() {
           .lte("date", trendEndDate)
           .order("date", { ascending: true });
 
-        if (selectedCustomerList.length > 0) {
-          monthQuery = monthQuery.in("customer", selectedCustomerList);
+        if (selectedPropertyList.length > 0) {
+          monthQuery = monthQuery.in("customer", selectedPropertyList);
         }
 
         const { data: monthData } = await monthQuery;
@@ -901,15 +901,15 @@ export default function FinancialOverviewPage() {
       });
     }
 
-    // Profitable customers
-    const profitableCustomers = properties.filter((p) => p.netIncome > 0);
-    if (profitableCustomers.length > 0) {
+    // Profitable properties
+    const profitableProperties = properties.filter((p) => p.netIncome > 0);
+    if (profitableProperties.length > 0) {
       alerts.push({
-        id: "profitable-customers",
+        id: "profitable-properties",
         type: "success",
-        title: "Strong Customer Performance",
-        message: `${profitableCustomers.length} of ${properties.length} customers are profitable`,
-        action: "View Customers",
+        title: "Strong Property Performance",
+        message: `${profitableProperties.length} of ${properties.length} properties are profitable`,
+        action: "View Properties",
         href: "/financials",
       });
     }
@@ -949,15 +949,15 @@ export default function FinancialOverviewPage() {
       setLoadingTrend(true);
       setTrendError(null);
       const endMonth = monthsList.indexOf(selectedMonth) + 1;
-      const selectedCustomerList = Array.from(selectedCustomers).filter(
-        (c) => c !== "All Customers",
+      const selectedPropertyList = Array.from(selectedProperties).filter(
+        (c) => c !== "All Properties",
       );
-      const customerQuery =
-        selectedCustomerList.length > 0
-          ? `&customerId=${encodeURIComponent(selectedCustomerList.join(","))}`
+      const propertyQuery =
+        selectedPropertyList.length > 0
+          ? `&customerId=${encodeURIComponent(selectedPropertyList.join(","))}`
           : "";
       const res = await fetch(
-        `/api/organizations/${orgId}/trend-data?months=12&endMonth=${endMonth}&endYear=${selectedYear}${customerQuery}`,
+        `/api/organizations/${orgId}/trend-data?months=12&endMonth=${endMonth}&endYear=${selectedYear}${propertyQuery}`,
       );
       if (!res.ok) throw new Error("Failed to fetch trend data");
       const json: { monthlyData: MonthlyPoint[] } = await res.json();
@@ -1018,7 +1018,7 @@ export default function FinancialOverviewPage() {
     timePeriod,
     selectedMonth,
     selectedYear,
-    selectedCustomers,
+    selectedProperties,
     customStartDate,
     customEndDate,
   ]);
@@ -1100,12 +1100,12 @@ export default function FinancialOverviewPage() {
     margin: "margin",
     transactionCount: "transactions",
   } as const;
-  const customerSubtitle =
+  const propertySubtitle =
     timePeriod === "Monthly"
-      ? `Top 10 customers sorted by ${sortLabels[sortColumn]} for ${selectedMonth} ${selectedYear}`
-      : `Top 10 customers sorted by ${sortLabels[sortColumn]} for ${formatDate(propertyStart)} - ${formatDate(propertyEnd)}`;
+      ? `Top 10 properties sorted by ${sortLabels[sortColumn]} for ${selectedMonth} ${selectedYear}`
+      : `Top 10 properties sorted by ${sortLabels[sortColumn]} for ${formatDate(propertyStart)} - ${formatDate(propertyEnd)}`;
 
-  const sortedCustomers = useMemo(() => {
+  const sortedProperties = useMemo(() => {
     if (!financialData?.propertyBreakdown) return [];
     return [...financialData.propertyBreakdown]
       .map((p) => ({
@@ -1122,8 +1122,8 @@ export default function FinancialOverviewPage() {
       .slice(0, 10);
   }, [financialData, sortColumn, sortDirection]);
 
-  const topCustomerTotals = useMemo(() => {
-    const totals = sortedCustomers.reduce(
+  const topPropertyTotals = useMemo(() => {
+    const totals = sortedProperties.reduce(
       (acc, p) => {
         acc.revenue += p.revenue || 0;
         acc.expenses += p.expenses || 0;
@@ -1136,7 +1136,7 @@ export default function FinancialOverviewPage() {
       ...totals,
       margin: totals.revenue ? (totals.netIncome / totals.revenue) * 100 : 0,
     };
-  }, [sortedCustomers]);
+  }, [sortedProperties]);
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -1209,7 +1209,7 @@ export default function FinancialOverviewPage() {
     },
     {
       title: "Accounts Receivable",
-      description: "Customer payments and aging",
+      description: "Property payments and aging",
       href: "/accounts-receivable",
       icon: CreditCard,
       color: BRAND_COLORS.warning,
@@ -1584,9 +1584,9 @@ export default function FinancialOverviewPage() {
                     </CardTitle>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="relative" ref={customerDropdownRef}>
+                    <div className="relative" ref={propertyDropdownRef}>
                       <button
-                        onClick={() => setCustomerDropdownOpen(!customerDropdownOpen)}
+                        onClick={() => setPropertyDropdownOpen(!propertyDropdownOpen)}
                         className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
                         style={
                           {
@@ -1594,37 +1594,37 @@ export default function FinancialOverviewPage() {
                           } as React.CSSProperties
                         }
                       >
-                        Customer: {Array.from(selectedCustomers).join(", ")}
+                        Property: {Array.from(selectedProperties).join(", ")}
                         <ChevronDown className="w-4 h-4 ml-1" />
                       </button>
 
-                      {customerDropdownOpen && (
+                      {propertyDropdownOpen && (
                         <div className="absolute right-0 z-10 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                          {availableCustomers.map((cust) => (
+                          {availableProperties.map((cust) => (
                             <label
                               key={cust}
                               className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
                             >
                               <input
                                 type="checkbox"
-                                checked={selectedCustomers.has(cust)}
+                                checked={selectedProperties.has(cust)}
                                 onChange={(e) => {
-                                  const newSelected = new Set(selectedCustomers);
+                                  const newSelected = new Set(selectedProperties);
                                   if (e.target.checked) {
-                                    if (cust === "All Customers") {
+                                    if (cust === "All Properties") {
                                       newSelected.clear();
-                                      newSelected.add("All Customers");
+                                      newSelected.add("All Properties");
                                     } else {
-                                      newSelected.delete("All Customers");
+                                      newSelected.delete("All Properties");
                                       newSelected.add(cust);
                                     }
                                   } else {
                                     newSelected.delete(cust);
                                     if (newSelected.size === 0) {
-                                      newSelected.add("All Customers");
+                                      newSelected.add("All Properties");
                                     }
                                   }
-                                  setSelectedCustomers(newSelected);
+                                  setSelectedProperties(newSelected);
                                 }}
                                 className="mr-3 rounded"
                                 style={{ accentColor: BRAND_COLORS.primary }}
@@ -1737,13 +1737,13 @@ export default function FinancialOverviewPage() {
                 </CardContent>
               </Card>
 
-              {/* Customer Performance Pie Chart */}
+              {/* Property Performance Pie Chart */}
               <Card>
                 <CardHeader className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <PieChart className="h-4 w-4 text-gray-600" />
                     <CardTitle className="text-lg font-semibold">
-                      Customer Performance
+                      Property Performance
                     </CardTitle>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1765,21 +1765,21 @@ export default function FinancialOverviewPage() {
                     <div className="flex gap-1">
                       <Button
                         className={`h-8 w-8 p-0 ${
-                          customerChartType === "pie"
+                          propertyChartType === "pie"
                             ? ""
                             : "bg-white text-gray-700 border border-gray-200"
                         }`}
-                        onClick={() => setCustomerChartType("pie")}
+                        onClick={() => setPropertyChartType("pie")}
                       >
                         <PieChart className="h-4 w-4" />
                       </Button>
                       <Button
                         className={`h-8 w-8 p-0 ${
-                          customerChartType === "bar"
+                          propertyChartType === "bar"
                             ? ""
                             : "bg-white text-gray-700 border border-gray-200"
                         }`}
-                        onClick={() => setCustomerChartType("bar")}
+                        onClick={() => setPropertyChartType("bar")}
                       >
                         <BarChart3 className="h-4 w-4" />
                       </Button>
@@ -1794,7 +1794,7 @@ export default function FinancialOverviewPage() {
                   )}
                   {loadingProperty && (
                     <div className="text-sm text-gray-500">
-                      Loading customers...
+                      Loading properties...
                     </div>
                   )}
                   {!loadingProperty && propertyChartData.length === 0 && (
@@ -1810,7 +1810,7 @@ export default function FinancialOverviewPage() {
                   )}
                   {!loadingProperty && propertyChartData.length > 0 && (
                     <ResponsiveContainer width="100%" height={300}>
-                      {customerChartType === "pie" ? (
+                      {propertyChartType === "pie" ? (
                         <RechartsPieChart>
                           <Pie
                             data={propertyChartData}
@@ -1972,14 +1972,14 @@ export default function FinancialOverviewPage() {
               </div>
             </div>
 
-            {/* Top Customers Performance */}
+            {/* Top Properties Performance */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
               <div className="p-6 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">
-                  Top Performing Customers
+                  Top Performing Properties
                 </h3>
                 <div className="text-sm text-gray-600 mt-1">
-                  {customerSubtitle}
+                  {propertySubtitle}
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -1987,7 +1987,7 @@ export default function FinancialOverviewPage() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Customer
+                        Property
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         <button
@@ -2082,10 +2082,10 @@ export default function FinancialOverviewPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {sortedCustomers.map((customer, index) => {
-                      const margin = customer.margin;
+                    {sortedProperties.map((property, index) => {
+                      const margin = property.margin;
                       return (
-                        <tr key={customer.name} className="hover:bg-gray-50">
+                        <tr key={property.name} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
                               <div
@@ -2100,25 +2100,25 @@ export default function FinancialOverviewPage() {
                                 }`}
                               ></div>
                               <div className="text-sm font-medium text-gray-900">
-                                {customer.name}
+                                {property.name}
                               </div>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatCurrency(customer.revenue)}
+                            {formatCurrency(property.revenue)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatCurrency(customer.expenses)}
+                            {formatCurrency(property.expenses)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
                               className={`text-sm font-medium ${
-                                customer.netIncome >= 0
+                                property.netIncome >= 0
                                   ? "text-green-600"
                                   : "text-red-600"
                               }`}
                             >
-                              {formatCurrency(customer.netIncome)}
+                              {formatCurrency(property.netIncome)}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -2145,30 +2145,30 @@ export default function FinancialOverviewPage() {
               </div>
             </div>
 
-            {/* Top Customers Summary */}
+            {/* Top Properties Summary */}
             <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 border border-blue-200">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">
-                    {formatCurrency(topCustomerTotals.revenue)}
+                    {formatCurrency(topPropertyTotals.revenue)}
                   </div>
                   <div className="text-sm text-gray-600 mt-1">Revenue</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-purple-600">
-                    {formatCurrency(topCustomerTotals.expenses)}
+                    {formatCurrency(topPropertyTotals.expenses)}
                   </div>
                   <div className="text-sm text-gray-600 mt-1">Expenses</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">
-                    {formatCurrency(topCustomerTotals.netIncome)}
+                    {formatCurrency(topPropertyTotals.netIncome)}
                   </div>
                   <div className="text-sm text-gray-600 mt-1">Net Income</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-orange-600">
-                    {topCustomerTotals.margin.toFixed(1)}%
+                    {topPropertyTotals.margin.toFixed(1)}%
                   </div>
                   <div className="text-sm text-gray-600 mt-1">Margin</div>
                 </div>
