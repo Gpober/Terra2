@@ -127,6 +127,114 @@ const monthsList = [
 
 const yearsList = Array.from({ length: 10 }, (_, i) => (new Date().getFullYear() - 5 + i).toString())
 
+// Make an exclusive end date (YYYY-MM-DD) -> next day (YYYY-MM-DD)
+const toExclusiveDate = (toInclusive: string) => {
+  const d = new Date(`${toInclusive}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
+// Tiny safe number helper
+const toNum = (v: any) => (v === null || v === undefined || v === '' ? 0 : Number(v))
+
+// 1) Fetch cash-entry numbers (is_cash_account = true) in the exclusive window
+async function fetchCashEntryNumbers(
+  supabase: any,
+  startDate: string,
+  endDate: string,
+  selectedProperty: string,
+  selectedBankAccount?: string,
+) {
+  let q = supabase
+    .from('journal_entry_lines')
+    .select('entry_number', { head: false, count: 'exact' })
+    .eq('is_cash_account', true)
+    .gte('date', startDate)
+    .lt('date', toExclusiveDate(endDate))
+
+  if (selectedProperty && selectedProperty !== 'All Properties') {
+    q = q.eq('class', selectedProperty)
+  }
+  if (selectedBankAccount && selectedBankAccount !== 'All Bank Accounts') {
+    q = q.eq('entry_bank_account', selectedBankAccount)
+  }
+
+  const { data, error } = await q
+  if (error) throw error
+  const set = new Set((data || []).map((r: any) => r.entry_number))
+  return Array.from(set)
+}
+
+// 2) Fetch offsets (is_cash_account = false) for those entries in the same window
+async function fetchOffsetsForEntries(
+  supabase: any,
+  startDate: string,
+  endDate: string,
+  entryNumbers: string[],
+  includeTransfers: boolean,
+  selectedProperty: string,
+) {
+  if (!entryNumbers.length) return []
+  let q = supabase
+    .from('journal_entry_lines')
+    .select('date, entry_number, account, account_type, report_category, debit, credit, class')
+    .eq('is_cash_account', false)
+    .in('entry_number', entryNumbers)
+    .gte('date', startDate)
+    .lt('date', toExclusiveDate(endDate))
+
+  if (!includeTransfers) {
+    q = q.neq('report_category', 'transfer')
+  }
+  if (selectedProperty && selectedProperty !== 'All Properties') {
+    q = q.eq('class', selectedProperty)
+  }
+
+  const { data, error } = await q
+  if (error) throw error
+  let rows = data || []
+  if (!includeTransfers) {
+    rows = rows.filter(
+      (tx: any) => String(tx.report_category || '').toLowerCase() !== 'transfer',
+    )
+  }
+  return rows
+}
+
+// 3) Group offsets by month (YYYY-MM) and sum credit − debit
+function groupOffsetsMonthly(offsets: any[]) {
+  const byMonth = new Map<string, number>()
+  for (const tx of offsets) {
+    const d = new Date(tx.date)
+    const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+    const cashEffect = toNum(tx.credit) - toNum(tx.debit)
+    byMonth.set(month, (byMonth.get(month) || 0) + cashEffect)
+  }
+  return Array.from(byMonth.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, net]) => ({ month, net_cash_flow: net }))
+}
+
+// RPC helper for headline net
+type NetRow = { month: string; net_cash_flow: number }
+
+async function fetchNetFromRPC(
+  supabase: any,
+  from: string,
+  toExclusive: string,
+  includeTransfers: boolean,
+  klass: string | null,
+): Promise<NetRow[]> {
+  const { data, error } = await supabase.rpc('net_cash_flow_monthly', {
+    p_from: from,
+    p_to_exclusive: toExclusive,
+    p_include_transfers: includeTransfers,
+    p_class: klass,
+  })
+  if (error) throw error
+  return (data ?? []) as NetRow[]
+}
+
 export default function CashFlowPage() {
   // All state variables
   const [selectedMonth, setSelectedMonth] = useState<string>("June")
@@ -185,6 +293,7 @@ export default function CashFlowPage() {
   const [journalEntryLines, setJournalEntryLines] = useState<JournalEntryLine[]>([])
   const [showJournalModal, setShowJournalModal] = useState(false)
   const [journalTitle, setJournalTitle] = useState("")
+  const [netChangeTotal, setNetChangeTotal] = useState(0)
 
   // Data quality reconciliation state
   const [badEntries, setBadEntries] = useState<{ entry: string; delta: number }[]>([])
@@ -213,9 +322,6 @@ export default function CashFlowPage() {
   }
 
   const sum = (values: number[]) => values.reduce((acc, val) => acc + val, 0)
-
-  // Convert any value to a number, treating null/undefined as 0
-  const toNum = (v: any) => Number(v ?? 0)
 
 
   // Format date for display
@@ -775,7 +881,7 @@ export default function CashFlowPage() {
         .from("journal_entry_lines")
         .select("entry_number,date,entry_bank_account,debit,credit,report_category,class")
         .gte("date", startDate)
-        .lte("date", endDate)
+        .lt("date", toExclusiveDate(endDate))
         .eq("is_cash_account", true)
         .not("entry_bank_account", "is", null)
 
@@ -786,25 +892,43 @@ export default function CashFlowPage() {
         query = query.eq("entry_bank_account", selectedBankAccount)
       }
       if (!includeTransfers) {
-        query = query.not("report_category", "ilike", "transfer")
+        query = query.neq("report_category", "transfer")
       }
 
       const { data: cashLines, error } = await query
       if (error) throw error
 
+      const rpcRows = await fetchNetFromRPC(
+        supabase,
+        startDate,
+        toExclusiveDate(endDate),
+        includeTransfers,
+        selectedProperty === 'All Properties' ? null : selectedProperty,
+      )
+      const rpcTotal = rpcRows.reduce((s, r) => s + toNum(r.net_cash_flow), 0)
+      setNetChangeTotal(rpcTotal)
+
       const bankAccountMap = new Map<string, Record<string, number>>()
       const periodSet = new Set<string>()
       const cashTransactionsList: any[] = []
 
-      cashLines.forEach((line: any) => {
+      const rawCashLines = cashLines || []
+      const lines = includeTransfers
+        ? rawCashLines
+        : rawCashLines.filter(
+            (l: any) => String(l.report_category || '').toLowerCase() !== 'transfer',
+          )
+
+      lines.forEach((line: any) => {
         const periodKey = getPeriodKey(line.date)
         periodSet.add(periodKey)
         const bank = line.entry_bank_account || "Unspecified"
-        const cashDelta = toNum(line.credit) - toNum(line.debit)
+        // Align with offsets orientation so inflows are positive
+        const cashDelta = toNum(line.debit) - toNum(line.credit)
         if (!bankAccountMap.has(bank)) bankAccountMap.set(bank, {})
         const bankData = bankAccountMap.get(bank)!
         bankData[periodKey] = toNum(bankData[periodKey]) + cashDelta
-        cashTransactionsList.push({ ...line, cashDelta, periodKey })
+        cashTransactionsList.push({ ...line, cashFlowImpact: cashDelta, periodKey })
       })
 
       const periodsArray = Array.from(periodSet)
@@ -844,77 +968,24 @@ export default function CashFlowPage() {
     }
   }
 
-  // Helper: fetch offset lines via view if available, otherwise fall back to two-step query
+  // Helper: fetch offset lines using offsets-only two-step method
   const fetchOffsets = async (startDate: string, endDate: string) => {
-    // Attempt to use the cash_related_offsets view
-    let viewQuery = supabase
-      .from("cash_related_offsets")
-      .select("entry_number,date,class,account,account_type,report_category,debit,credit,cash_effect,cash_bank_account")
-      .gte("date", startDate)
-      .lte("date", endDate)
-
-    if (selectedProperty !== "All Properties") {
-      viewQuery = viewQuery.eq("class", selectedProperty)
-    }
-    if (selectedBankAccount !== "All Bank Accounts") {
-      viewQuery = viewQuery.eq("cash_bank_account", selectedBankAccount)
-    }
-    if (!includeTransfers) {
-      viewQuery = viewQuery.not("report_category", "ilike", "transfer")
-    }
-
-    const { data: viewData, error: viewError } = await viewQuery
-    if (!viewError && viewData) return viewData
-
-    console.warn("cash_related_offsets view unavailable, falling back to manual query", viewError)
-
-    // Option B fallback: first fetch cash lines
-    let cashQuery = supabase
-      .from("journal_entry_lines")
-      .select("entry_number,entry_bank_account")
-      .gte("date", startDate)
-      .lte("date", endDate)
-      .eq("is_cash_account", true)
-
-    if (selectedProperty !== "All Properties") {
-      cashQuery = cashQuery.eq("class", selectedProperty)
-    }
-    if (selectedBankAccount !== "All Bank Accounts") {
-      cashQuery = cashQuery.eq("entry_bank_account", selectedBankAccount)
-    }
-    if (!includeTransfers) {
-      cashQuery = cashQuery.not("report_category", "ilike", "transfer")
-    }
-
-    const { data: cashLines, error: cashError } = await cashQuery
-    if (cashError) throw cashError
-
-    const entryBankMap = new Map<string, string>()
-    const entryNumbers: string[] = []
-    cashLines.forEach((l: any) => {
-      const entry = l.entry_number
-      if (!entryBankMap.has(entry)) {
-        entryBankMap.set(entry, l.entry_bank_account)
-        entryNumbers.push(entry)
-      }
-    })
-
-    if (entryNumbers.length === 0) return []
-
-    let offsetQuery = supabase
-      .from("journal_entry_lines")
-      .select("entry_number,date,class,account,account_type,report_category,debit,credit")
-      .in("entry_number", entryNumbers)
-      .eq("is_cash_account", false)
-
-    const { data: offsetLines, error: offsetError } = await offsetQuery
-    if (offsetError) throw offsetError
-
-    return offsetLines.map((o: any) => ({
-        ...o,
-        cash_bank_account: entryBankMap.get(o.entry_number) || null,
-        cash_effect: toNum(o.credit) - toNum(o.debit),
-      }))
+    const entryNumbers = await fetchCashEntryNumbers(
+      supabase,
+      startDate,
+      endDate,
+      selectedProperty,
+      selectedBankAccount,
+    )
+    const offsets = await fetchOffsetsForEntries(
+      supabase,
+      startDate,
+      endDate,
+      entryNumbers,
+      includeTransfers,
+      selectedProperty,
+    )
+    return offsets
   }
 
   // FIXED: Fetch offset account data with corrected transfer toggle logic
@@ -926,6 +997,17 @@ export default function CashFlowPage() {
       const { startDate, endDate } = calculateDateRange()
 
       const offsets = await fetchOffsets(startDate, endDate)
+      groupOffsetsMonthly(offsets)
+
+      const rpcRows = await fetchNetFromRPC(
+        supabase,
+        startDate,
+        toExclusiveDate(endDate),
+        includeTransfers,
+        selectedProperty === 'All Properties' ? null : selectedProperty,
+      )
+      const rpcTotal = rpcRows.reduce((s, r) => s + toNum(r.net_cash_flow), 0)
+      setNetChangeTotal(rpcTotal)
 
       const offsetAccountMap = new Map<string, Record<string, number>>()
       const periodSet = new Set<string>()
@@ -1002,6 +1084,17 @@ export default function CashFlowPage() {
       const { startDate, endDate } = calculateDateRange()
 
       const offsets = await fetchOffsets(startDate, endDate)
+      groupOffsetsMonthly(offsets)
+
+      const rpcRows = await fetchNetFromRPC(
+        supabase,
+        startDate,
+        toExclusiveDate(endDate),
+        includeTransfers,
+        selectedProperty === 'All Properties' ? null : selectedProperty,
+      )
+      const rpcTotal = rpcRows.reduce((s, r) => s + toNum(r.net_cash_flow), 0)
+      setNetChangeTotal(rpcTotal)
 
       const propertyTransactions = new Map<string, any[]>()
       offsets.forEach((row: any) => {
@@ -1057,7 +1150,7 @@ export default function CashFlowPage() {
       .from("journal_entry_lines")
       .select("entry_number,debit,credit,entry_bank_account,report_category,class,date")
       .gte("date", startDate)
-      .lte("date", endDate)
+      .lt("date", toExclusiveDate(endDate))
       .eq("is_cash_account", true)
 
     if (selectedProperty !== "All Properties") {
@@ -1067,7 +1160,7 @@ export default function CashFlowPage() {
       cashQuery = cashQuery.eq("entry_bank_account", selectedBankAccount)
     }
     if (!includeTransfers) {
-      cashQuery = cashQuery.not("report_category", "ilike", "transfer")
+      cashQuery = cashQuery.neq("report_category", "transfer")
     }
 
     const { data: cashLines, error } = await cashQuery
@@ -1076,10 +1169,17 @@ export default function CashFlowPage() {
       return
     }
 
+    const rawCashLines = cashLines || []
+    const filteredCashLines = includeTransfers
+      ? rawCashLines
+      : rawCashLines.filter(
+          (l: any) => String(l.report_category || '').toLowerCase() !== 'transfer',
+        )
+
     const cashSum = new Map<string, number>()
-    cashLines.forEach((l: any) => {
+    filteredCashLines.forEach((l: any) => {
       const entry = l.entry_number
-      const delta = toNum(l.credit) - toNum(l.debit)
+      const delta = toNum(l.debit) - toNum(l.credit)
       cashSum.set(entry, toNum(cashSum.get(entry)) + delta)
     })
 
@@ -1783,7 +1883,7 @@ export default function CashFlowPage() {
 
               {bankAccountData.length > 0 &&
                 (() => {
-                  const grandTotal = bankAccountData.reduce((sum, acc) => sum + acc.total, 0)
+                  const grandTotal = netChangeTotal
                   return (
                     <div className="p-6 bg-gradient-to-r from-green-50 to-blue-50 border-b border-gray-200">
                       <div className="text-center">
@@ -1938,7 +2038,7 @@ export default function CashFlowPage() {
                   const financingTotal = accountsByClass.financing.reduce((sum, acc) => sum + acc.total, 0)
                   const investingTotal = accountsByClass.investing.reduce((sum, acc) => sum + acc.total, 0)
                   const transferTotal = accountsByClass.transfer.reduce((sum, acc) => sum + acc.total, 0)
-                  const netTotal = operatingTotal + financingTotal + investingTotal + transferTotal
+                  const netTotal = netChangeTotal
 
                   return (
                     <div className="p-6 bg-gradient-to-r from-blue-50 to-green-50 border-b border-gray-200">
@@ -2686,25 +2786,9 @@ export default function CashFlowPage() {
                               )}
                             </h4>
                             <span
-                              className={`text-xl font-bold ${(() => {
-                                const grandTotal =
-                                  accountsByClass.operating.reduce((sum, acc) => sum + acc.total, 0) +
-                                  accountsByClass.financing.reduce((sum, acc) => sum + acc.total, 0) +
-                                  accountsByClass.investing.reduce((sum, acc) => sum + acc.total, 0) +
-                                  accountsByClass.transfer.reduce((sum, acc) => sum + acc.total, 0) +
-                                  accountsByClass.other.reduce((sum, acc) => sum + acc.total, 0)
-                                return grandTotal >= 0 ? "text-green-700" : "text-red-700"
-                              })()}`}
+                              className={`text-xl font-bold ${netChangeTotal >= 0 ? 'text-green-700' : 'text-red-700'}`}
                             >
-                              {(() => {
-                                const grandTotal =
-                                  accountsByClass.operating.reduce((sum, acc) => sum + acc.total, 0) +
-                                  accountsByClass.financing.reduce((sum, acc) => sum + acc.total, 0) +
-                                  accountsByClass.investing.reduce((sum, acc) => sum + acc.total, 0) +
-                                  accountsByClass.transfer.reduce((sum, acc) => sum + acc.total, 0) +
-                                  accountsByClass.other.reduce((sum, acc) => sum + acc.total, 0)
-                                return formatCurrency(grandTotal)
-                              })()}
+                              {formatCurrency(netChangeTotal)}
                             </span>
                           </div>
                         </div>
@@ -2774,25 +2858,11 @@ export default function CashFlowPage() {
                                   {periodType !== "total" && (
                                     <td className="px-6 py-4 text-right">
                                       <span
-                                        className={`font-bold text-xl ${(() => {
-                                          const grandTotal =
-                                            accountsByClass.operating.reduce((sum, acc) => sum + acc.total, 0) +
-                                            accountsByClass.financing.reduce((sum, acc) => sum + acc.total, 0) +
-                                            accountsByClass.investing.reduce((sum, acc) => sum + acc.total, 0) +
-                                            accountsByClass.transfer.reduce((sum, acc) => sum + acc.total, 0) +
-                                            accountsByClass.other.reduce((sum, acc) => sum + acc.total, 0)
-                                          return grandTotal >= 0 ? "text-green-700" : "text-red-700"
-                                        })()}`}
+                                        className={`font-bold text-xl ${
+                                          netChangeTotal >= 0 ? 'text-green-700' : 'text-red-700'
+                                        }`}
                                       >
-                                        {(() => {
-                                          const grandTotal =
-                                            accountsByClass.operating.reduce((sum, acc) => sum + acc.total, 0) +
-                                            accountsByClass.financing.reduce((sum, acc) => sum + acc.total, 0) +
-                                            accountsByClass.investing.reduce((sum, acc) => sum + acc.total, 0) +
-                                            accountsByClass.transfer.reduce((sum, acc) => sum + acc.total, 0) +
-                                            accountsByClass.other.reduce((sum, acc) => sum + acc.total, 0)
-                                          return formatCurrency(grandTotal)
-                                        })()}
+                                        {formatCurrency(netChangeTotal)}
                                       </span>
                                     </td>
                                   )}
