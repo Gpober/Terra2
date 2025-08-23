@@ -759,44 +759,42 @@ export default function FinancialOverviewPage() {
     };
   };
 
-  // Process cash flow transactions (same logic as cash-flow page)
-  const processCashFlowTransactions = (transactions) => {
-    let operatingCashFlow = 0;
-    let financingCashFlow = 0;
-    let investingCashFlow = 0;
+  // Process cash flow transactions EXACTLY like the cash-flow page (offsets method)
+const processCashFlowTransactions = (transactions: any[]) => {
+  const toNum = (v: any) => (v === null || v === undefined || v === "" ? 0 : Number(v));
+  const isTransferRC = (rc: any) => String(rc ?? "").toLowerCase() === "transfer";
 
-    transactions.forEach((tx) => {
-      if (!tx.entry_bank_account) return; // Must have bank account source
+  // 1) Find entries that touched cash (Bank) — exclude transfers
+  const cashEntryNumbers = new Set(
+    (transactions || [])
+      .filter((t) => t.is_cash_account === true && !isTransferRC(t.report_category))
+      .map((t) => t.entry_number)
+  );
 
-      const classification = classifyCashFlowTransaction(
-        tx.account_type,
-        tx.report_category,
-      );
-      const cashImpact =
-        tx.report_category === "transfer"
-          ? Number.parseFloat(tx.debit) - Number.parseFloat(tx.credit) // Reverse for transfers
-          : tx.normal_balance ||
-            Number.parseFloat(tx.credit) - Number.parseFloat(tx.debit); // Normal for others
+  // 2) Use ONLY non-cash (offset) lines from those entries — exclude transfers
+  const offsets = (transactions || []).filter(
+    (t) =>
+      t.is_cash_account === false &&
+      cashEntryNumbers.has(t.entry_number) &&
+      !isTransferRC(t.report_category)
+  );
 
-      if (classification === "operating") {
-        operatingCashFlow += cashImpact;
-      } else if (classification === "financing") {
-        financingCashFlow += cashImpact;
-      } else if (classification === "investing") {
-        investingCashFlow += cashImpact;
-      }
-    });
+  // 3) Sum cash effect by bucket (credit − debit)
+  let operatingCashFlow = 0;
+  let investingCashFlow = 0;
+  let financingCashFlow = 0;
 
-    const netCashFlow =
-      operatingCashFlow + financingCashFlow + investingCashFlow;
+  for (const tx of offsets) {
+    const cashEffect = toNum(tx.credit) - toNum(tx.debit); // authoritative sign
+    const bucket = classifyCashFlowTransaction(tx.account_type, tx.report_category);
+    if (bucket === "operating") operatingCashFlow += cashEffect;
+    else if (bucket === "investing") investingCashFlow += cashEffect;
+    else if (bucket === "financing") financingCashFlow += cashEffect;
+  }
 
-    return {
-      operatingCashFlow,
-      financingCashFlow,
-      investingCashFlow,
-      netCashFlow,
-    };
-  };
+  const netCashFlow = operatingCashFlow + investingCashFlow + financingCashFlow;
+  return { operatingCashFlow, financingCashFlow, investingCashFlow, netCashFlow };
+};
 
   // Get property performance breakdown
   const getPropertyBreakdown = (transactions) => {
