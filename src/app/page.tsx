@@ -102,15 +102,8 @@ const classifyPLAccount = (accountType, reportCategory, accountName) => {
 };
 
 // Cash Flow Classification mirroring cash-flow page logic
-const classifyCashFlowTransaction = (
-  accountType: string,
-  reportCategory: string,
-) => {
+const classifyCashFlowTransaction = (accountType: string) => {
   const typeLower = accountType?.toLowerCase() || "";
-  const categoryLower = reportCategory?.toLowerCase() || "";
-
-  // Transfers are their own bucket
-  if (categoryLower === "transfer") return "transfer";
 
   // Operating activities - Income and Expenses
   if (
@@ -162,9 +155,6 @@ export default function FinancialOverviewPage() {
   const monthDropdownRef = useRef<HTMLDivElement>(null);
   const yearDropdownRef = useRef<HTMLDivElement>(null);
   const propertyDropdownRef = useRef<HTMLDivElement>(null);
-  const [financialData, setFinancialData] = useState(null);
-  const [error, setError] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
   const [chartType, setChartType] = useState<"line" | "bar">("line");
   type MonthlyPoint = {
     monthName: string;
@@ -179,7 +169,6 @@ export default function FinancialOverviewPage() {
     netIncome: number;
     expenses: number;
   };
-  const [trendData, setTrendData] = useState<TrendPoint[]>([]);
   type PropertyPoint = {
     name: string;
     revenue: number;
@@ -188,6 +177,33 @@ export default function FinancialOverviewPage() {
     netIncome: number;
     cogs: number;
   };
+  interface Alert {
+    id: string;
+    type: string;
+    title: string;
+    message: string;
+    action: string;
+    href: string;
+  }
+
+  interface FinancialData {
+    current: Record<string, number>;
+    previous: Record<string, number>;
+    trends: TrendPoint[];
+    growth: Record<string, number>;
+    propertyBreakdown: PropertyPoint[];
+    alerts: Alert[];
+    summary: {
+      totalTransactions: number;
+      activeProperties: number;
+      profitMargin: number;
+    };
+  }
+
+  const [financialData, setFinancialData] = useState<FinancialData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [trendData, setTrendData] = useState<TrendPoint[]>([]);
   const [propertyData, setPropertyData] = useState<PropertyPoint[]>([]);
   const [propertyChartMetric, setPropertyChartMetric] = useState<
     "income" | "gp" | "ni" | "expenses" | "cogs"
@@ -766,16 +782,29 @@ export default function FinancialOverviewPage() {
     };
   };
 
-  // Process cash flow transactions EXACTLY like the cash-flow page (offsets method)
-const processCashFlowTransactions = (transactions: any[]) => {
-  const toNum = (v: any) => (v === null || v === undefined || v === "" ? 0 : Number(v));
-  const isTransferRC = (rc: any) => String(rc ?? "").toLowerCase() === "transfer";
+// Process cash flow transactions EXACTLY like the cash-flow page (offsets method)
+interface CashTransaction {
+  entry_number: string;
+  account_type?: string;
+  report_category?: string;
+  is_cash_account?: boolean;
+  debit?: number | string | null;
+  credit?: number | string | null;
+}
+
+const processCashFlowTransactions = (transactions: CashTransaction[]) => {
+  const toNum = (v: unknown): number =>
+    v === null || v === undefined || v === "" ? 0 : Number(v);
+  const isTransferRC = (rc: unknown): boolean =>
+    String(rc ?? "").toLowerCase() === "transfer";
 
   // 1) Find entries that touched cash (Bank) — exclude transfers
   const cashEntryNumbers = new Set(
     (transactions || [])
-      .filter((t) => t.is_cash_account === true && !isTransferRC(t.report_category))
-      .map((t) => t.entry_number)
+      .filter(
+        (t) => t.is_cash_account === true && !isTransferRC(t.report_category),
+      )
+      .map((t) => t.entry_number),
   );
 
   // 2) Use ONLY non-cash (offset) lines from those entries — exclude transfers
@@ -783,38 +812,27 @@ const processCashFlowTransactions = (transactions: any[]) => {
     (t) =>
       t.is_cash_account === false &&
       cashEntryNumbers.has(t.entry_number) &&
-      !isTransferRC(t.report_category)
+      !isTransferRC(t.report_category),
   );
 
   // 3) Sum cash effect by bucket (credit − debit)
   let operatingCashFlow = 0;
   let investingCashFlow = 0;
   let financingCashFlow = 0;
-  let transferCashFlow = 0;
-  let otherCashFlow = 0;
 
   for (const tx of offsets) {
     const cashEffect = toNum(tx.credit) - toNum(tx.debit); // authoritative sign
-    const bucket = classifyCashFlowTransaction(tx.account_type, tx.report_category);
+    const bucket = classifyCashFlowTransaction(tx.account_type || "");
     if (bucket === "operating") operatingCashFlow += cashEffect;
     else if (bucket === "investing") investingCashFlow += cashEffect;
     else if (bucket === "financing") financingCashFlow += cashEffect;
-    else if (bucket === "transfer") transferCashFlow += cashEffect;
-    else otherCashFlow += cashEffect;
   }
 
-  const netCashFlow =
-    operatingCashFlow +
-    investingCashFlow +
-    financingCashFlow +
-    transferCashFlow +
-    otherCashFlow;
+  const netCashFlow = operatingCashFlow + investingCashFlow + financingCashFlow;
   return {
     operatingCashFlow,
     financingCashFlow,
     investingCashFlow,
-    transferCashFlow,
-    otherCashFlow,
     netCashFlow,
   };
 };
@@ -1134,10 +1152,10 @@ const processCashFlowTransactions = (transactions: any[]) => {
         margin: p.revenue ? (p.netIncome / p.revenue) * 100 : 0,
       }))
       .sort((a, b) => {
-        const aVal =
-          sortColumn === "margin" ? a.margin : (a as any)[sortColumn];
-        const bVal =
-          sortColumn === "margin" ? b.margin : (b as any)[sortColumn];
+        const aRecord = a as Record<string, number> & { margin: number };
+        const bRecord = b as Record<string, number> & { margin: number };
+        const aVal = sortColumn === "margin" ? aRecord.margin : aRecord[sortColumn];
+        const bVal = sortColumn === "margin" ? bRecord.margin : bRecord[sortColumn];
         return sortDirection === "asc" ? aVal - bVal : bVal - aVal;
       })
       .slice(0, 10);
@@ -1168,7 +1186,16 @@ const processCashFlowTransactions = (transactions: any[]) => {
     }
   };
 
-  const TrendTooltip = ({ active, payload, label }) => {
+  interface TrendTooltipPayload {
+    dataKey?: string;
+    value?: number;
+  }
+  interface TrendTooltipProps {
+    active?: boolean;
+    payload?: TrendTooltipPayload[];
+    label?: string;
+  }
+  const TrendTooltip = ({ active, payload, label }: TrendTooltipProps) => {
     if (active && payload && payload.length) {
       const revenue =
         payload.find((p) => p.dataKey === "totalIncome")?.value || 0;
@@ -1186,7 +1213,14 @@ const processCashFlowTransactions = (transactions: any[]) => {
     return null;
   };
 
-  const PropertyTooltip = ({ active, payload }) => {
+  interface PropertyTooltipPayloadItem {
+    payload: { name: string; value: number };
+  }
+  interface PropertyTooltipProps {
+    active?: boolean;
+    payload?: PropertyTooltipPayloadItem[];
+  }
+  const PropertyTooltip = ({ active, payload }: PropertyTooltipProps) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       const percent = totalPropertyValue
@@ -1935,7 +1969,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                 <div className="p-6">
                   {financialData.alerts.length > 0 ? (
                     <div className="space-y-4">
-                      {financialData.alerts.map((alert) => (
+                      {financialData.alerts.map((alert: Alert) => (
                         <div
                           key={alert.id}
                           className={`p-4 rounded-lg border-l-4 ${
