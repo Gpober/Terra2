@@ -101,9 +101,16 @@ const classifyPLAccount = (accountType, reportCategory, accountName) => {
   return null; // Not a P&L account (likely Balance Sheet account)
 };
 
-// Cash Flow Classification using the same logic as cash-flow page
-const classifyCashFlowTransaction = (accountType) => {
+// Cash Flow Classification mirroring cash-flow page logic
+const classifyCashFlowTransaction = (
+  accountType: string,
+  reportCategory: string,
+) => {
   const typeLower = accountType?.toLowerCase() || "";
+  const categoryLower = reportCategory?.toLowerCase() || "";
+
+  // Transfers are their own bucket
+  if (categoryLower === "transfer") return "transfer";
 
   // Operating activities - Income and Expenses
   if (
@@ -783,6 +790,8 @@ const processCashFlowTransactions = (transactions: any[]) => {
   let operatingCashFlow = 0;
   let investingCashFlow = 0;
   let financingCashFlow = 0;
+  let transferCashFlow = 0;
+  let otherCashFlow = 0;
 
   for (const tx of offsets) {
     const cashEffect = toNum(tx.credit) - toNum(tx.debit); // authoritative sign
@@ -790,10 +799,24 @@ const processCashFlowTransactions = (transactions: any[]) => {
     if (bucket === "operating") operatingCashFlow += cashEffect;
     else if (bucket === "investing") investingCashFlow += cashEffect;
     else if (bucket === "financing") financingCashFlow += cashEffect;
+    else if (bucket === "transfer") transferCashFlow += cashEffect;
+    else otherCashFlow += cashEffect;
   }
 
-  const netCashFlow = operatingCashFlow + investingCashFlow + financingCashFlow;
-  return { operatingCashFlow, financingCashFlow, investingCashFlow, netCashFlow };
+  const netCashFlow =
+    operatingCashFlow +
+    investingCashFlow +
+    financingCashFlow +
+    transferCashFlow +
+    otherCashFlow;
+  return {
+    operatingCashFlow,
+    financingCashFlow,
+    investingCashFlow,
+    transferCashFlow,
+    otherCashFlow,
+    netCashFlow,
+  };
 };
 
   // Get property performance breakdown
