@@ -800,11 +800,11 @@ export default function CashFlowPage() {
         const periodKey = getPeriodKey(line.date)
         periodSet.add(periodKey)
         const bank = line.entry_bank_account || "Unspecified"
-        const cashDelta = toNum(line.credit) - toNum(line.debit)
+        const cashDelta = toNum(line.debit) - toNum(line.credit)
         if (!bankAccountMap.has(bank)) bankAccountMap.set(bank, {})
         const bankData = bankAccountMap.get(bank)!
         bankData[periodKey] = toNum(bankData[periodKey]) + cashDelta
-        cashTransactionsList.push({ ...line, cashDelta, periodKey })
+        cashTransactionsList.push({ ...line, cashFlowImpact: cashDelta, periodKey })
       })
 
       const periodsArray = Array.from(periodSet)
