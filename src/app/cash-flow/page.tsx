@@ -1470,71 +1470,6 @@ export default function CashFlowPage() {
             </div>
 
             <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center space-x-4">
-              {/* View Mode Toggle */}
-              <div className="flex bg-gray-100 rounded-lg p-1">
-                <button
-                  onClick={() => setViewMode("offset")}
-                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                    viewMode === "offset" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
-                  }`}
-                >
-                  📊 By Offset Account
-                </button>
-                <button
-                  onClick={() => setViewMode("bybank")}
-                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                    viewMode === "bybank" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
-                  }`}
-                >
-                  🏦 By Bank (Cash lines)
-                </button>
-                <button
-                  onClick={() => setViewMode("traditional")}
-                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                    viewMode === "traditional"
-                      ? "bg-white text-gray-900 shadow-sm"
-                      : "text-gray-600 hover:text-gray-900"
-                  }`}
-                >
-                  📈 Traditional View
-                </button>
-              </div>
-
-              {/* Period Type Toggle (only for offset and bank views) */}
-              {(viewMode === "offset" || viewMode === "bybank") && (
-                <div className="flex bg-gray-100 rounded-lg p-1">
-                  <button
-                    onClick={() => setPeriodType("monthly")}
-                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                      periodType === "monthly"
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
-                  >
-                    📅 Monthly
-                  </button>
-                  <button
-                    onClick={() => setPeriodType("weekly")}
-                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                      periodType === "weekly"
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
-                  >
-                    📊 Weekly
-                  </button>
-                  <button
-                    onClick={() => setPeriodType("total")}
-                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                      periodType === "total"
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
-                  >
-                    Σ Total
-                  </button>
-                </div>
-              )}
               <div className="relative">
                 <button
                   onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
@@ -1687,18 +1622,86 @@ export default function CashFlowPage() {
               </select>
             )}
 
-            {/* NEW: Transfer Toggle */}
-            <div className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-500 transition-all">
-              <input
-                type="checkbox"
-                id="includeTransfers"
-                checked={includeTransfers}
-                onChange={(e) => setIncludeTransfers(e.target.checked)}
-                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-              />
-              <label htmlFor="includeTransfers" className="cursor-pointer select-none">
-                Include transfers (for bank reconciliation)
-              </label>
+            {/* NEW: Transfer Toggle and View Options */}
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-500 transition-all">
+                <input
+                  type="checkbox"
+                  id="includeTransfers"
+                  checked={includeTransfers}
+                  onChange={(e) => setIncludeTransfers(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <label htmlFor="includeTransfers" className="cursor-pointer select-none">
+                  Include transfers (for bank reconciliation)
+                </label>
+              </div>
+
+              {/* View Mode Toggle */}
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode("offset")}
+                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                    viewMode === "offset" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  📊 By Offset Account
+                </button>
+                <button
+                  onClick={() => setViewMode("bybank")}
+                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                    viewMode === "bybank" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  🏦 By Bank (Cash lines)
+                </button>
+                <button
+                  onClick={() => setViewMode("traditional")}
+                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                    viewMode === "traditional"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  📈 Traditional View
+                </button>
+              </div>
+
+              {/* Period Type Toggle (only for offset and bank views) */}
+              {(viewMode === "offset" || viewMode === "bybank") && (
+                <div className="flex bg-gray-100 rounded-lg p-1">
+                  <button
+                    onClick={() => setPeriodType("monthly")}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                      periodType === "monthly"
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-600 hover:text-gray-900"
+                    }`}
+                  >
+                    📅 Monthly
+                  </button>
+                  <button
+                    onClick={() => setPeriodType("weekly")}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                      periodType === "weekly"
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-600 hover:text-gray-900"
+                    }`}
+                  >
+                    📊 Weekly
+                  </button>
+                  <button
+                    onClick={() => setPeriodType("total")}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                      periodType === "total"
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-600 hover:text-gray-900"
+                    }`}
+                  >
+                    Σ Total
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
