@@ -725,7 +725,7 @@ async function connectToAPI() {
           };
           propertiesMap.set(propertyName, property);
         }
-        const revenue = row.net_income ?? 0;
+        const revenue = row.net_income ? Number(row.net_income) : 0;
         property.revenue += revenue;
         property.noi = Math.round(property.revenue * 0.6);
 
@@ -1272,7 +1272,7 @@ async function connectToAPI() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" />
                       <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`} />
-                      <Tooltip formatter={(value) => [`${value.toLocaleString()}`, 'Revenue']} />
+                      <Tooltip formatter={(value: number, name: string) => [`$${Number(value).toLocaleString()}`, name]} />
                       <Legend />
                       {selectedProperties.map(propertyId => {
                         const property = currentData.properties.find(p => p.id === propertyId);
