@@ -148,12 +148,12 @@ const getNightsInMonth = (
   return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
 };
 
-const calculateKPIsFromReservations = (
-  reservations: Reservation[],
-  propertyCount: number,
-  monthIndex: number,
-  year: number
-): KPIs => {
+  const calculateKPIsFromReservations = (
+    reservations: Reservation[],
+    propertyCount: number,
+    monthIndex: number,
+    year: number
+  ): KPIs => {
   const totalRevenue = reservations.reduce((sum, r) => sum + r.revenue, 0);
   const totalNights = reservations.reduce(
     (sum, r) => sum + getNightsInMonth(r.checkin, r.checkout, monthIndex, year),
@@ -595,6 +595,17 @@ const [syncing, setSyncing] = useState(false);
     ]
   };
 
+  const getRolling12Months = (endMonth: number, endYear: number) => {
+    return Array.from({ length: 12 }).map((_, i) => {
+      const date = new Date(endYear, endMonth - (11 - i), 1);
+      return {
+        label: date.toLocaleString('default', { month: 'short' }),
+        monthIndex: date.getMonth(),
+        year: date.getFullYear()
+      };
+    });
+  };
+
  // API connection function
 async function connectToAPI() {
   setSyncing(true);
@@ -1014,20 +1025,29 @@ async function connectToAPI() {
         return data;
       });
     } else {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return months.map((month, index) => {
-        const data: Record<string, any> = { month };
+      const months = getRolling12Months(
+        monthsList.indexOf(selectedMonth),
+        Number(selectedYear)
+      );
+      return months.map((m, index) => {
+        const data: Record<string, any> = { month: m.label };
         selectedProperties.forEach(propertyId => {
           const property = currentData.properties.find(p => p.id === propertyId);
           if (property) {
             const baseOccupancy = property.occupancy;
             const variation = Math.sin(index * 0.5) * 10;
-            
+
             if (occupancyChartMode === '2025-only') {
               data[property.name] = Math.max(20, Math.min(100, baseOccupancy + variation));
             } else {
-              data[`${property.name} (2024)`] = Math.max(20, Math.min(100, baseOccupancy + variation - 8));
-              data[`${property.name} (2025)`] = Math.max(20, Math.min(100, baseOccupancy + variation));
+              data[`${property.name} (2024)`] = Math.max(
+                20,
+                Math.min(100, baseOccupancy + variation - 8)
+              );
+              data[`${property.name} (2025)`] = Math.max(
+                20,
+                Math.min(100, baseOccupancy + variation)
+              );
             }
           }
         });
@@ -1053,9 +1073,12 @@ async function connectToAPI() {
         return data;
       });
     } else {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return months.map((month, index) => {
-        const data: Record<string, any> = { month };
+      const months = getRolling12Months(
+        monthsList.indexOf(selectedMonth),
+        Number(selectedYear)
+      );
+      return months.map((m, index) => {
+        const data: Record<string, any> = { month: m.label };
         selectedProperties.forEach(propertyId => {
           const property = currentData.properties.find(p => p.id === propertyId);
           if (property) {
