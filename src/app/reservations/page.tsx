@@ -132,12 +132,41 @@ const toNights = (checkIn?: string | null, checkOut?: string | null): number => 
   return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
 };
 
-const calculateKPIsFromReservations = (reservations: Reservation[]): KPIs => {
+const getNightsInMonth = (
+  checkIn: string,
+  checkOut: string,
+  monthIndex: number,
+  year: number
+): number => {
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+  const monthStart = new Date(year, monthIndex, 1);
+  const monthEnd = new Date(year, monthIndex + 1, 1);
+  const effectiveStart = start > monthStart ? start : monthStart;
+  const effectiveEnd = end < monthEnd ? end : monthEnd;
+  const diff = effectiveEnd.getTime() - effectiveStart.getTime();
+  return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
+};
+
+const calculateKPIsFromReservations = (
+  reservations: Reservation[],
+  propertyCount: number,
+  monthIndex: number,
+  year: number
+): KPIs => {
   const totalRevenue = reservations.reduce((sum, r) => sum + r.revenue, 0);
-  const totalNights = reservations.reduce((sum, r) => sum + r.nights, 0);
+  const totalNights = reservations.reduce(
+    (sum, r) => sum + getNightsInMonth(r.checkin, r.checkout, monthIndex, year),
+    0
+  );
   const avgNightlyRate = totalNights ? totalRevenue / totalNights : 0;
   const avgStayLength = reservations.length ? totalNights / reservations.length : 0;
-  return { totalRevenue, avgNightlyRate, avgStayLength, occupancyRate: 82 };
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const availableNights = propertyCount * daysInMonth;
+  const occupancyRate = availableNights
+    ? Math.round((totalNights / availableNights) * 100)
+    : 0;
+  return { totalRevenue, avgNightlyRate, avgStayLength, occupancyRate };
 };
 
 const PropertyDropdown = ({
@@ -646,17 +675,21 @@ async function connectToAPI() {
   };
 
   const getFilteredReservations = (): Reservation[] => {
-    const selectedPropertyNames = selectedProperties.map(id => 
-      currentData.properties.find(p => p.id === id)?.name
-    ).filter(Boolean) as string[];
-    
+    const selectedPropertyNames = selectedProperties
+      .map(id => currentData.properties.find(p => p.id === id)?.name)
+      .filter(Boolean) as string[];
+
     const monthIndex = monthsList.indexOf(selectedMonth);
+    const year = Number(selectedYear);
+    const monthStart = new Date(year, monthIndex, 1);
+    const monthEnd = new Date(year, monthIndex + 1, 1);
+
     return currentData.reservations.filter(r => {
       const propertyMatch = selectedPropertyNames.includes(r.property);
-      const date = new Date(r.checkin);
-      const monthMatch = date.getMonth() === monthIndex;
-      const yearMatch = date.getFullYear().toString() === selectedYear;
-      return propertyMatch && monthMatch && yearMatch;
+      const checkinDate = new Date(r.checkin);
+      const checkoutDate = new Date(r.checkout);
+      const overlaps = checkinDate < monthEnd && checkoutDate > monthStart;
+      return propertyMatch && overlaps;
     });
   };
   // Backend data loading function
@@ -718,7 +751,13 @@ async function connectToAPI() {
       });
 
       const properties = Array.from(propertiesMap.values());
-      const kpis = calculateKPIsFromReservations(reservations);
+      const now = new Date();
+      const kpis = calculateKPIsFromReservations(
+        reservations,
+        properties.length,
+        now.getMonth(),
+        now.getFullYear()
+      );
       setBackendData({ properties, reservations, kpis });
       setSelectedProperties(properties.map((p) => p.id));
       setIsConnectedToBackend(true);
@@ -732,17 +771,12 @@ async function connectToAPI() {
   
   const calculateDemoKPIs = (): KPIs => {
     const filteredReservations = getFilteredReservations();
-    const totalRevenue = filteredReservations.reduce((sum, r) => sum + r.revenue, 0);
-    const totalNights = filteredReservations.reduce((sum, r) => sum + r.nights, 0);
-    const avgNightlyRate = totalNights > 0 ? totalRevenue / totalNights : 0;
-    const avgStayLength = filteredReservations.length > 0 ? totalNights / filteredReservations.length : 0;
-    
-    return {
-      totalRevenue,
-      avgNightlyRate,
-      avgStayLength,
-      occupancyRate: 82 // Simplified calculation
-    };
+    return calculateKPIsFromReservations(
+      filteredReservations,
+      selectedProperties.length,
+      monthsList.indexOf(selectedMonth),
+      Number(selectedYear)
+    );
   };
 
   const generateCalendar = (): { monthName: string; days: CalendarDay[] } => {
@@ -1036,7 +1070,12 @@ async function connectToAPI() {
   };
 
   const kpis = backendData
-    ? calculateKPIsFromReservations(getFilteredReservations())
+    ? calculateKPIsFromReservations(
+        getFilteredReservations(),
+        selectedProperties.length,
+        monthsList.indexOf(selectedMonth),
+        Number(selectedYear)
+      )
     : calculateDemoKPIs();
   const calendar = generateCalendar();
 
