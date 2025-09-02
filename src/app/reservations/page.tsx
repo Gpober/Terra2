@@ -1008,30 +1008,65 @@ async function connectToAPI() {
   };
 
   const generateOccupancyChartData = () => {
+    const selectedPropertyNames = selectedProperties
+      .map(id => currentData.properties.find(p => p.id === id)?.name)
+      .filter(Boolean) as string[];
+
+    const calcRate = (pairs: { monthIndex: number; year: number }[]) => {
+      const totalNights = currentData.reservations
+        .filter(r => selectedPropertyNames.includes(r.property))
+        .reduce((sum, r) => {
+          return sum + pairs.reduce((inner, { monthIndex, year }) => {
+            return inner + getNightsInMonth(r.checkin, r.checkout, monthIndex, year);
+          }, 0);
+        }, 0);
+      const totalDays = pairs.reduce(
+        (sum, { monthIndex, year }) => sum + new Date(year, monthIndex + 1, 0).getDate(),
+        0
+      );
+      const availableNights = selectedProperties.length * totalDays;
+      return availableNights ? (totalNights / availableNights) * 100 : 0;
+    };
+
     if (currentView === 'seasonal') {
+      const year = Number(selectedYear);
       const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
-      return seasons.map((season) => {
-        const seasonalMultipliers = { Winter: 0.8, Spring: 1.0, Summer: 1.3, Fall: 1.1 };
-        let total2025 = 0;
-        let total2024 = 0;
-        selectedProperties.forEach(propertyId => {
-          const property = currentData.properties.find(p => p.id === propertyId);
-          if (property) {
-            const baseOccupancy = property.occupancy;
-            const seasonalOccupancy = baseOccupancy * (seasonalMultipliers[season as keyof typeof seasonalMultipliers] || 1);
-            const occ2025 = Math.max(20, Math.min(100, seasonalOccupancy));
-            total2025 += occ2025;
-            const occ2024 = Math.max(20, Math.min(100, seasonalOccupancy - 8));
-            total2024 += occ2024;
-          }
-        });
+      const seasonMonths: Record<string, { monthIndex: number; year: number }[]> = {
+        Winter: [
+          { monthIndex: 11, year: year - 1 },
+          { monthIndex: 0, year },
+          { monthIndex: 1, year }
+        ],
+        Spring: [
+          { monthIndex: 2, year },
+          { monthIndex: 3, year },
+          { monthIndex: 4, year }
+        ],
+        Summer: [
+          { monthIndex: 5, year },
+          { monthIndex: 6, year },
+          { monthIndex: 7, year }
+        ],
+        Fall: [
+          { monthIndex: 8, year },
+          { monthIndex: 9, year },
+          { monthIndex: 10, year }
+        ]
+      };
+      return seasons.map(season => {
         if (occupancyChartMode === '2025-only') {
-          const avg2025 = selectedProperties.length ? total2025 / selectedProperties.length : 0;
-          return { month: season, occupancy: avg2025 };
+          const occupancy = calcRate(seasonMonths[season]);
+          return { month: season, occupancy };
         } else {
-          const avg2025 = selectedProperties.length ? total2025 / selectedProperties.length : 0;
-          const avg2024 = selectedProperties.length ? total2024 / selectedProperties.length : 0;
-          return { month: season, '2024': avg2024, '2025': avg2025 };
+          const current = calcRate(seasonMonths[season]);
+          const prevSeasonMonths = seasonMonths[season].map(({ monthIndex, year }) => ({
+            monthIndex,
+            year: year - 1
+          }));
+          const prev = calcRate(prevSeasonMonths);
+          const yearLabel = year.toString();
+          const prevLabel = (year - 1).toString();
+          return { month: season, [prevLabel]: prev, [yearLabel]: current };
         }
       });
     } else {
@@ -1039,29 +1074,24 @@ async function connectToAPI() {
         monthsList.indexOf(selectedMonth),
         Number(selectedYear)
       );
-      return months.map((m, index) => {
-        let total2025 = 0;
-        let total2024 = 0;
-        selectedProperties.forEach(propertyId => {
-          const property = currentData.properties.find(p => p.id === propertyId);
-          if (property) {
-            const baseOccupancy = property.occupancy;
-            const variation = Math.sin(index * 0.5) * 10;
-            const occ2025 = Math.max(20, Math.min(100, baseOccupancy + variation));
-            total2025 += occ2025;
-            const occ2024 = Math.max(20, Math.min(100, baseOccupancy + variation - 8));
-            total2024 += occ2024;
-          }
+      if (occupancyChartMode === '2025-only') {
+        return months.map(m => {
+          const occupancy = calcRate([{ monthIndex: m.monthIndex, year: m.year }]);
+          return { month: m.label, occupancy };
         });
-        if (occupancyChartMode === '2025-only') {
-          const avg2025 = selectedProperties.length ? total2025 / selectedProperties.length : 0;
-          return { month: m.label, occupancy: avg2025 };
-        } else {
-          const avg2025 = selectedProperties.length ? total2025 / selectedProperties.length : 0;
-          const avg2024 = selectedProperties.length ? total2024 / selectedProperties.length : 0;
-          return { month: m.label, '2024': avg2024, '2025': avg2025 };
-        }
-      });
+      } else {
+        const year = Number(selectedYear);
+        const prevYear = year - 1;
+        return months.map(m => {
+          const current = calcRate([{ monthIndex: m.monthIndex, year }]);
+          const prev = calcRate([{ monthIndex: m.monthIndex, year: prevYear }]);
+          return {
+            month: m.label,
+            [prevYear]: prev,
+            [year]: current
+          };
+        });
+      }
     }
   };
 
@@ -1476,8 +1506,8 @@ async function connectToAPI() {
                     <LineChart data={generateOccupancyChartData()}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" />
-                      <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
-                      <Tooltip formatter={(value: any) => [`${Number(value).toFixed(1)}%`, 'Occupancy']} />
+                      <YAxis domain={[0, 100]} tickFormatter={(value) => `${value.toFixed(1)}%`} />
+                      <Tooltip formatter={(value: number) => [`${value.toFixed(1)}%`, 'Occupancy']} />
                       <Legend />
                       {occupancyChartMode === '2025-only' ? (
                         <Line
