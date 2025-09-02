@@ -1444,8 +1444,8 @@ export default function CashFlowPage() {
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="relative flex justify-center">
+            <div className="flex flex-col items-center text-center">
               <h1 className="text-2xl font-bold text-gray-900">Cash Flow Statement</h1>
               <p className="text-sm text-gray-600 mt-1">
                 {timePeriod === "Custom"
@@ -1469,7 +1469,7 @@ export default function CashFlowPage() {
               </p>
             </div>
 
-            <div className="flex items-center space-x-4">
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center space-x-4">
               {/* View Mode Toggle */}
               <div className="flex bg-gray-100 rounded-lg p-1">
                 <button

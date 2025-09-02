@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react"
 import { RefreshCw, X } from "lucide-react"
 import { supabase } from "@/lib/supabaseClient"
+import { PageHeader } from "@/components/PageHeader"
 
 // I AM CFO Brand Colors
 const BRAND_COLORS = {
@@ -1028,38 +1029,35 @@ export default function BalanceSheetPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Balance Sheet</h1>
-              <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                As of{" "}
-                {asOfDate
-                  ? formatDate(asOfDate)
-                  : timePeriod === "Monthly"
-                    ? `${selectedMonth} ${selectedYear}`
-                    : timePeriod === "Quarterly"
-                      ? `Q${Math.floor(monthsList.indexOf(selectedMonth) / 3) + 1} ${selectedYear}`
-                      : `${timePeriod} Period`}
-              </p>
-              <p className="text-xs text-blue-600 mt-1">
-                💰 Enhanced with account type subtotals and corrected balance calculations
-              </p>
-            </div>
-
-            <button
-              onClick={loadData}
-              disabled={isLoading}
-              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors shadow-sm disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Balance Sheet"
+        subtitle={
+          <>
+            As of{" "}
+            {asOfDate
+              ? formatDate(asOfDate)
+              : timePeriod === "Monthly"
+                ? `${selectedMonth} ${selectedYear}`
+                : timePeriod === "Quarterly"
+                  ? `Q${Math.floor(monthsList.indexOf(selectedMonth) / 3) + 1} ${selectedYear}`
+                  : `${timePeriod} Period`}
+          </>
+        }
+        right={
+          <button
+            onClick={loadData}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors shadow-sm disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+        }
+      >
+        <p className="text-xs text-blue-600 mt-1">
+          💰 Enhanced with account type subtotals and corrected balance calculations
+        </p>
+      </PageHeader>
 
       {/* Filters */}
       <div className="bg-white border-b">
