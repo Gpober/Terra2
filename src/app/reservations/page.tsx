@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Download, RefreshCw, Plus, X, ChevronDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { supabase } from '@/lib/supabaseClient';
@@ -201,18 +201,13 @@ const PropertyDropdown = ({
       
       {isOpen && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-          <div
-            className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer"
-            onClick={() => onPropertyChange('all')}
-          >
-            <input
-              type="checkbox"
-              checked={selectedProperties.length === properties.length}
-              onChange={() => onPropertyChange('all')}
-              className="w-4 h-4"
-              style={{ accentColor: BRAND_COLORS.primary }}
-            />
-            <label className="text-sm text-gray-900 flex-1 cursor-pointer">All Properties</label>
+          <div className="flex justify-between px-4 py-2 text-sm border-b border-gray-200">
+            <button onClick={() => onPropertyChange('selectAll')} className="text-blue-600 hover:underline">
+              Select All
+            </button>
+            <button onClick={() => onPropertyChange('clearAll')} className="text-blue-600 hover:underline">
+              Clear All
+            </button>
           </div>
           {properties.map((property) => (
             <div
@@ -432,6 +427,27 @@ const ReservationsTab: React.FC = () => {
   const [currentView, setCurrentView] = useState<ChartMode>('monthly');
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date(2025, 5, 28));
   const [propertyDropdownOpen, setPropertyDropdownOpen] = useState(false);
+  const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
+  const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
+  const monthDropdownRef = useRef<HTMLDivElement>(null);
+  const yearDropdownRef = useRef<HTMLDivElement>(null);
+  const monthsList = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
+  ];
+  const yearsList = Array.from({ length: 10 }, (_, i) => (new Date().getFullYear() - 5 + i).toString());
+  const [selectedMonth, setSelectedMonth] = useState<string>(monthsList[new Date().getMonth()]);
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [newReservationModalOpen, setNewReservationModalOpen] = useState(false);
   const [notification, setNotification] = useState<NotificationState>({ show: false, message: '', type: 'info' });
   const [calendarTooltip, setCalendarTooltip] = useState<TooltipState>({ show: false, content: '', x: 0, y: 0 });
@@ -460,6 +476,24 @@ const [syncing, setSyncing] = useState(false);
   useEffect(() => {
     loadFromSupabase();
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (monthDropdownRef.current && !monthDropdownRef.current.contains(event.target as Node)) {
+        setMonthDropdownOpen(false);
+      }
+      if (yearDropdownRef.current && !yearDropdownRef.current.contains(event.target as Node)) {
+        setYearDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const monthIndex = monthsList.indexOf(selectedMonth);
+    setCurrentCalendarDate(new Date(Number(selectedYear), monthIndex, 1));
+  }, [selectedMonth, selectedYear]);
 
 // Use backend data if available, otherwise use demo data
   const currentData = backendData ?? {
@@ -621,19 +655,21 @@ async function connectToAPI() {
   };
 
   const handlePropertyCheckboxChange = (propertyId: string): void => {
-    if (propertyId === 'all') {
+    if (propertyId === 'selectAll') {
       const allProperties = currentData.properties.map(p => p.id);
-      const allSelected = selectedProperties.length === allProperties.length;
-      setSelectedProperties(allSelected ? [] : allProperties);
-    } else {
-      setSelectedProperties(prev => {
-        if (prev.includes(propertyId)) {
-          return prev.filter(id => id !== propertyId);
-        } else {
-          return [...prev, propertyId];
-        }
-      });
+      setSelectedProperties(allProperties);
+      return;
     }
+    if (propertyId === 'clearAll') {
+      setSelectedProperties([]);
+      return;
+    }
+    setSelectedProperties(prev => {
+      if (prev.includes(propertyId)) {
+        return prev.filter(id => id !== propertyId);
+      }
+      return [...prev, propertyId];
+    });
   };
 
   const getFilteredReservations = (): Reservation[] => {
@@ -641,9 +677,14 @@ async function connectToAPI() {
       currentData.properties.find(p => p.id === id)?.name
     ).filter(Boolean) as string[];
     
-    return currentData.reservations.filter(r => 
-      selectedPropertyNames.includes(r.property)
-    );
+    const monthIndex = monthsList.indexOf(selectedMonth);
+    return currentData.reservations.filter(r => {
+      const propertyMatch = selectedPropertyNames.includes(r.property);
+      const date = new Date(r.checkin);
+      const monthMatch = date.getMonth() === monthIndex;
+      const yearMatch = date.getFullYear().toString() === selectedYear;
+      return propertyMatch && monthMatch && yearMatch;
+    });
   };
   // Backend data loading function
   const loadFromSupabase = async (): Promise<void> => {
@@ -1057,6 +1098,60 @@ async function connectToAPI() {
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
             <h2 className="text-3xl font-bold" style={{ color: BRAND_COLORS.primary }}>Reservation Management</h2>
             <div className="flex flex-wrap gap-4 items-center">
+              <div className="relative" ref={monthDropdownRef}>
+                <button
+                  onClick={() => setMonthDropdownOpen(!monthDropdownOpen)}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                  style={{ '--tw-ring-color': `${BRAND_COLORS.secondary}33` } as React.CSSProperties}
+                >
+                  {selectedMonth}
+                  <ChevronDown className="w-4 h-4 ml-2" />
+                </button>
+                {monthDropdownOpen && (
+                  <div className="absolute z-10 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {monthsList.map((month) => (
+                      <button
+                        key={month}
+                        onClick={() => {
+                          setSelectedMonth(month);
+                          setMonthDropdownOpen(false);
+                        }}
+                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                      >
+                        {month}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="relative" ref={yearDropdownRef}>
+                <button
+                  onClick={() => setYearDropdownOpen(!yearDropdownOpen)}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                  style={{ '--tw-ring-color': `${BRAND_COLORS.secondary}33` } as React.CSSProperties}
+                >
+                  {selectedYear}
+                  <ChevronDown className="w-4 h-4 ml-2" />
+                </button>
+                {yearDropdownOpen && (
+                  <div className="absolute z-10 mt-1 w-32 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {yearsList.map((year) => (
+                      <button
+                        key={year}
+                        onClick={() => {
+                          setSelectedYear(year);
+                          setYearDropdownOpen(false);
+                        }}
+                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                      >
+                        {year}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <PropertyDropdown
                 properties={currentData.properties}
                 selectedProperties={selectedProperties}
