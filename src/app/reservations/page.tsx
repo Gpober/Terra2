@@ -1,7 +1,8 @@
 "use client";
-import React, { useState, useEffect } from 'react';
-import { Calendar, Download, RefreshCw, Plus, X, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Download, RefreshCw, Plus, X, ChevronDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { supabase } from '@/lib/supabaseClient';
 
 // Constants
 const BRAND_COLORS = {
@@ -33,6 +34,8 @@ const BRAND_COLORS = {
     900: '#0F172A'
   }
 };
+
+const PROPERTY_PALETTE = ['#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#3B82F6'];
 
 // Types
 type Property = {
@@ -77,6 +80,20 @@ type KPIs = {
   occupancyRate: number;
 };
 
+type DBReservationRow = {
+  id: string;
+  check_in: string | null;
+  check_out: string | null;
+  confirmation_code: string | null;
+  listing: string | null;
+  guest: string | null;
+  reservation_id: string | null;
+  net_income: number | null;
+  source: string | null;
+  qbo_listing: string | null;
+  created_at: string;
+};
+
 type NotificationState = {
   show: boolean;
   message: string;
@@ -102,6 +119,26 @@ type NewReservationForm = {
 };
 
 type ChartMode = 'monthly' | 'seasonal' | 'ytd' | '2025-only' | 'comparison';
+
+// Helpers
+const slugify = (qbo_listing: string): string =>
+  qbo_listing.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+const toNights = (checkIn?: string | null, checkOut?: string | null): number => {
+  if (!checkIn || !checkOut) return 0;
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+  const diff = end.getTime() - start.getTime();
+  return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
+};
+
+const calculateKPIsFromReservations = (reservations: Reservation[]): KPIs => {
+  const totalRevenue = reservations.reduce((sum, r) => sum + r.revenue, 0);
+  const totalNights = reservations.reduce((sum, r) => sum + r.nights, 0);
+  const avgNightlyRate = totalNights ? totalRevenue / totalNights : 0;
+  const avgStayLength = reservations.length ? totalNights / reservations.length : 0;
+  return { totalRevenue, avgNightlyRate, avgStayLength, occupancyRate: 82 };
+};
 
 // Components
 const IAMCFOLogo = ({ className = "w-8 h-8" }: { className?: string }) => (
@@ -164,18 +201,13 @@ const PropertyDropdown = ({
       
       {isOpen && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-          <div
-            className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer"
-            onClick={() => onPropertyChange('all')}
-          >
-            <input
-              type="checkbox"
-              checked={selectedProperties.length === properties.length}
-              onChange={() => onPropertyChange('all')}
-              className="w-4 h-4"
-              style={{ accentColor: BRAND_COLORS.primary }}
-            />
-            <label className="text-sm text-gray-900 flex-1 cursor-pointer">All Properties</label>
+          <div className="flex justify-between px-4 py-2 text-sm border-b border-gray-200">
+            <button onClick={() => onPropertyChange('selectAll')} className="text-blue-600 hover:underline">
+              Select All
+            </button>
+            <button onClick={() => onPropertyChange('clearAll')} className="text-blue-600 hover:underline">
+              Clear All
+            </button>
           </div>
           {properties.map((property) => (
             <div
@@ -395,6 +427,27 @@ const ReservationsTab: React.FC = () => {
   const [currentView, setCurrentView] = useState<ChartMode>('monthly');
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date(2025, 5, 28));
   const [propertyDropdownOpen, setPropertyDropdownOpen] = useState(false);
+  const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
+  const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
+  const monthDropdownRef = useRef<HTMLDivElement>(null);
+  const yearDropdownRef = useRef<HTMLDivElement>(null);
+  const monthsList = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
+  ];
+  const yearsList = Array.from({ length: 10 }, (_, i) => (new Date().getFullYear() - 5 + i).toString());
+  const [selectedMonth, setSelectedMonth] = useState<string>(monthsList[new Date().getMonth()]);
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [newReservationModalOpen, setNewReservationModalOpen] = useState(false);
   const [notification, setNotification] = useState<NotificationState>({ show: false, message: '', type: 'info' });
   const [calendarTooltip, setCalendarTooltip] = useState<TooltipState>({ show: false, content: '', x: 0, y: 0 });
@@ -413,16 +466,37 @@ const ReservationsTab: React.FC = () => {
 const [syncing, setSyncing] = useState(false);
   
   // Add these new state variables for backend integration
-  const [loading, setLoading] = useState(false);
   const [isConnectedToBackend, setIsConnectedToBackend] = useState(false);
-  const [backendData, setBackendData] = useState(null);
-// Load data when component mounts
+  const [backendData, setBackendData] = useState<{
+    properties: Property[];
+    reservations: Reservation[];
+    kpis?: KPIs;
+  } | null>(null);
+  // Load data when component mounts
   useEffect(() => {
-    loadDashboardData();
+    loadFromSupabase();
   }, []);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (monthDropdownRef.current && !monthDropdownRef.current.contains(event.target as Node)) {
+        setMonthDropdownOpen(false);
+      }
+      if (yearDropdownRef.current && !yearDropdownRef.current.contains(event.target as Node)) {
+        setYearDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const monthIndex = monthsList.indexOf(selectedMonth);
+    setCurrentCalendarDate(new Date(Number(selectedYear), monthIndex, 1));
+  }, [selectedMonth, selectedYear]);
+
 // Use backend data if available, otherwise use demo data
-  const currentData = backendData || {
+  const currentData = backendData ?? {
     properties: [
       {
         id: 'miami-beach',
@@ -520,29 +594,30 @@ const [syncing, setSyncing] = useState(false);
   };
 
  // API connection function
-const connectToAPI = async () => {
+async function connectToAPI() {
   setSyncing(true);
   try {
-    const response = await fetch('https://iamcfo-guesty-backend.onrender.com/api/guesty/sync', { 
+    const response = await fetch('https://iamcfo-guesty-backend.onrender.com/api/guesty/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
-    
+
     if (response.ok) {
       showNotification('Guesty sync started successfully!', 'success');
       // Wait a few seconds then reload data
       setTimeout(() => {
-        loadDashboardData();
+        loadFromSupabase();
       }, 3000);
     } else {
       showNotification('Backend sync failed - using demo data', 'error');
     }
   } catch (error) {
+    console.error(error);
     showNotification('Backend not reachable - using demo data', 'error');
   } finally {
     setSyncing(false);
   }
-};
+}
 
   // Utility functions
   const formatCurrency = (amount: number): string => {
@@ -575,28 +650,26 @@ const connectToAPI = async () => {
   };
 
   const getPropertyId = (propertyName: string): string => {
-    const propertyMap: Record<string, string> = {
-      'Miami Beach Condo': 'miami-beach',
-      'Downtown Loft': 'downtown-loft',
-      'Suburb House': 'suburb-house'
-    };
-    return propertyMap[propertyName] || 'miami-beach';
+    const property = currentData.properties.find(p => p.name === propertyName);
+    return property ? property.id : slugify(propertyName);
   };
 
   const handlePropertyCheckboxChange = (propertyId: string): void => {
-    if (propertyId === 'all') {
+    if (propertyId === 'selectAll') {
       const allProperties = currentData.properties.map(p => p.id);
-      const allSelected = selectedProperties.length === allProperties.length;
-      setSelectedProperties(allSelected ? [] : allProperties);
-    } else {
-      setSelectedProperties(prev => {
-        if (prev.includes(propertyId)) {
-          return prev.filter(id => id !== propertyId);
-        } else {
-          return [...prev, propertyId];
-        }
-      });
+      setSelectedProperties(allProperties);
+      return;
     }
+    if (propertyId === 'clearAll') {
+      setSelectedProperties([]);
+      return;
+    }
+    setSelectedProperties(prev => {
+      if (prev.includes(propertyId)) {
+        return prev.filter(id => id !== propertyId);
+      }
+      return [...prev, propertyId];
+    });
   };
 
   const getFilteredReservations = (): Reservation[] => {
@@ -604,49 +677,87 @@ const connectToAPI = async () => {
       currentData.properties.find(p => p.id === id)?.name
     ).filter(Boolean) as string[];
     
-    return currentData.reservations.filter(r => 
-      selectedPropertyNames.includes(r.property)
-    );
+    const monthIndex = monthsList.indexOf(selectedMonth);
+    return currentData.reservations.filter(r => {
+      const propertyMatch = selectedPropertyNames.includes(r.property);
+      const date = new Date(r.checkin);
+      const monthMatch = date.getMonth() === monthIndex;
+      const yearMatch = date.getFullYear().toString() === selectedYear;
+      return propertyMatch && monthMatch && yearMatch;
+    });
   };
-// Backend data loading function
-const loadDashboardData = async () => {
-  try {
-    setLoading(true);
-    const [propertiesRes, reservationsRes, kpisRes] = await Promise.all([
-      fetch('https://iamcfo-guesty-backend.onrender.com/api/dashboard/properties').catch(() => null),
-      fetch('https://iamcfo-guesty-backend.onrender.com/api/dashboard/reservations').catch(() => null),
-      fetch('https://iamcfo-guesty-backend.onrender.com/api/dashboard/kpis').catch(() => null)
-    ]);
+  // Backend data loading function
+  const loadFromSupabase = async (): Promise<void> => {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('id, check_in, check_out, confirmation_code, listing, guest, reservation_id, net_income, source, qbo_listing, created_at')
+        .not('qbo_listing', 'is', null);
 
-    if (propertiesRes?.ok && reservationsRes?.ok) {
-      const [propertiesData, reservationsData, kpisData] = await Promise.all([
-        propertiesRes.json(),
-        reservationsRes.json(),
-        kpisRes?.json() || {}
-      ]);
-      
-      // Update with real backend data
-      setBackendData({
-  properties: propertiesData.properties || [],
-  reservations: reservationsData.reservations || [],
-  kpis: kpisData
-});
-      
+      if (error) throw error;
+      const rows: DBReservationRow[] = (data as DBReservationRow[]) || [];
+
+      const propertiesMap = new Map<string, Property>();
+      const reservations: Reservation[] = [];
+
+      const hashId = (value: string): number => {
+        let hash = 0;
+        for (let i = 0; i < value.length; i++) {
+          hash = Math.imul(31, hash) + value.charCodeAt(i);
+        }
+        return Math.abs(hash);
+      };
+
+      rows.forEach((row) => {
+        const propertyName = row.qbo_listing ?? 'Unknown Property';
+        let property = propertiesMap.get(propertyName);
+        if (!property) {
+          const color = PROPERTY_PALETTE[propertiesMap.size % PROPERTY_PALETTE.length];
+          property = {
+            id: slugify(propertyName),
+            name: propertyName,
+            type: 'Listing',
+            description: 'Guesty / QBO Location',
+            revenue: 0,
+            occupancy: 80,
+            noi: 0,
+            color,
+          };
+          propertiesMap.set(propertyName, property);
+        }
+        const revenue = row.net_income ? Number(row.net_income) : 0;
+        property.revenue += revenue;
+        property.noi = Math.round(property.revenue * 0.6);
+
+        const reservationId = row.reservation_id || row.id;
+        reservations.push({
+          id: hashId(reservationId),
+          guest: row.guest && row.guest.trim() !== '' ? row.guest : 'Unknown Guest',
+          email: '',
+          phone: '',
+          property: propertyName,
+          checkin: row.check_in ?? '',
+          checkout: row.check_out ?? '',
+          nights: toNights(row.check_in, row.check_out),
+          revenue,
+          status: 'confirmed',
+        });
+      });
+
+      const properties = Array.from(propertiesMap.values());
+      const kpis = calculateKPIsFromReservations(reservations);
+      setBackendData({ properties, reservations, kpis });
+      setSelectedProperties(properties.map((p) => p.id));
       setIsConnectedToBackend(true);
       showNotification('Connected to live Guesty data!', 'success');
-    } else {
+    } catch (err) {
+      console.error('Failed to load reservations', err);
       setIsConnectedToBackend(false);
-      showNotification('Using demo data - backend connecting...', 'info');
+      showNotification('Using demo data - backend not reachable', 'error');
     }
-  } catch (error) {
-  setIsConnectedToBackend(false);
-  showNotification('Using demo data - backend will connect when Guesty credentials are added', 'info');
-} finally {
-  setLoading(false);
-}
-};
+  };
   
-  const calculateKPIs = (): KPIs => {
+  const calculateDemoKPIs = (): KPIs => {
     const filteredReservations = getFilteredReservations();
     const totalRevenue = filteredReservations.reduce((sum, r) => sum + r.revenue, 0);
     const totalNights = filteredReservations.reduce((sum, r) => sum + r.nights, 0);
@@ -665,7 +776,6 @@ const loadDashboardData = async () => {
     const year = currentCalendarDate.getFullYear();
     const month = currentCalendarDate.getMonth();
     const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
     const startDate = new Date(firstDay);
     startDate.setDate(startDate.getDate() - firstDay.getDay());
 
@@ -952,7 +1062,9 @@ const loadDashboardData = async () => {
     }
   };
 
-  const kpis = calculateKPIs();
+  const kpis = backendData
+    ? calculateKPIsFromReservations(getFilteredReservations())
+    : calculateDemoKPIs();
   const calendar = generateCalendar();
 
   return (
@@ -986,6 +1098,60 @@ const loadDashboardData = async () => {
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
             <h2 className="text-3xl font-bold" style={{ color: BRAND_COLORS.primary }}>Reservation Management</h2>
             <div className="flex flex-wrap gap-4 items-center">
+              <div className="relative" ref={monthDropdownRef}>
+                <button
+                  onClick={() => setMonthDropdownOpen(!monthDropdownOpen)}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                  style={{ '--tw-ring-color': `${BRAND_COLORS.secondary}33` } as React.CSSProperties}
+                >
+                  {selectedMonth}
+                  <ChevronDown className="w-4 h-4 ml-2" />
+                </button>
+                {monthDropdownOpen && (
+                  <div className="absolute z-10 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {monthsList.map((month) => (
+                      <button
+                        key={month}
+                        onClick={() => {
+                          setSelectedMonth(month);
+                          setMonthDropdownOpen(false);
+                        }}
+                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                      >
+                        {month}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="relative" ref={yearDropdownRef}>
+                <button
+                  onClick={() => setYearDropdownOpen(!yearDropdownOpen)}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                  style={{ '--tw-ring-color': `${BRAND_COLORS.secondary}33` } as React.CSSProperties}
+                >
+                  {selectedYear}
+                  <ChevronDown className="w-4 h-4 ml-2" />
+                </button>
+                {yearDropdownOpen && (
+                  <div className="absolute z-10 mt-1 w-32 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {yearsList.map((year) => (
+                      <button
+                        key={year}
+                        onClick={() => {
+                          setSelectedYear(year);
+                          setYearDropdownOpen(false);
+                        }}
+                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                      >
+                        {year}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <PropertyDropdown
                 properties={currentData.properties}
                 selectedProperties={selectedProperties}
@@ -1106,7 +1272,7 @@ const loadDashboardData = async () => {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" />
                       <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`} />
-                      <Tooltip formatter={(value) => [`${value.toLocaleString()}`, 'Revenue']} />
+                      <Tooltip formatter={(value: number, name: string) => [`$${Number(value).toLocaleString()}`, name]} />
                       <Legend />
                       {selectedProperties.map(propertyId => {
                         const property = currentData.properties.find(p => p.id === propertyId);
