@@ -39,6 +39,7 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/PageHeader";
 import { supabase } from "@/lib/supabaseClient";
 
 // I AM CFO Brand Colors
@@ -1239,45 +1240,38 @@ const processCashFlowTransactions = (transactions: any[]) => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="relative flex justify-center">
-            <div className="flex flex-col items-center text-center">
-              <h1 className="text-2xl font-bold text-gray-900">
-                Financial Overview
-              </h1>
-              <p className="text-sm text-gray-600 mt-1">
-                {timePeriod === "Custom"
-                  ? `${formatDate(calculateDateRange().startDate)} - ${formatDate(calculateDateRange().endDate)}`
-                  : timePeriod === "Monthly"
-                    ? `${selectedMonth} ${selectedYear}`
-                    : timePeriod === "Quarterly"
-                      ? `Q${Math.floor(monthsList.indexOf(selectedMonth) / 3) + 1} ${selectedYear}`
-                      : timePeriod === "YTD"
-                        ? `January - ${selectedMonth} ${selectedYear}`
-                        : timePeriod === "Trailing 12"
-                          ? `${formatDate(calculateDateRange().startDate)} - ${formatDate(calculateDateRange().endDate)}`
-                          : `${timePeriod} Period`}
-              </p>
-              {lastUpdated && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Last updated: {lastUpdated.toLocaleString()}
-                </p>
-              )}
-            </div>
-            <button
-              onClick={fetchFinancialData}
-              disabled={isLoading}
-              className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors shadow-sm disabled:opacity-50"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`}
-              />
-              {isLoading ? "Loading..." : "Refresh"}
-            </button>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Financial Overview"
+        subtitle={
+          timePeriod === "Custom"
+            ? `${formatDate(calculateDateRange().startDate)} - ${formatDate(calculateDateRange().endDate)}`
+            : timePeriod === "Monthly"
+              ? `${selectedMonth} ${selectedYear}`
+              : timePeriod === "Quarterly"
+                ? `Q${Math.floor(monthsList.indexOf(selectedMonth) / 3) + 1} ${selectedYear}`
+                : timePeriod === "YTD"
+                  ? `January - ${selectedMonth} ${selectedYear}`
+                  : timePeriod === "Trailing 12"
+                    ? `${formatDate(calculateDateRange().startDate)} - ${formatDate(calculateDateRange().endDate)}`
+                    : `${timePeriod} Period`
+        }
+        right={
+          <button
+            onClick={fetchFinancialData}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors shadow-sm disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+            {isLoading ? "Loading..." : "Refresh"}
+          </button>
+        }
+      >
+        {lastUpdated && (
+          <p className="text-xs text-gray-500 mt-1">
+            Last updated: {lastUpdated.toLocaleString()}
+          </p>
+        )}
+      </PageHeader>
 
       {/* Filters */}
       <div className="bg-white border-b">
