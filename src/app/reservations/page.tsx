@@ -455,6 +455,7 @@ const ReservationsTab: React.FC = () => {
   const [calendarTooltip, setCalendarTooltip] = useState<TooltipState>({ show: false, content: '', x: 0, y: 0 });
   const [occupancyChartMode, setOccupancyChartMode] = useState<ChartMode>('2025-only');
   const [revenueChartMode, setRevenueChartMode] = useState<ChartMode>('monthly');
+  const [revenueMetric, setRevenueMetric] = useState<'amount' | 'nights'>('amount');
   const [newReservationForm, setNewReservationForm] = useState<NewReservationForm>({
     guestName: '',
     guestEmail: '',
@@ -637,9 +638,13 @@ async function connectToAPI() {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
     }).format(amount);
+  };
+
+  const formatNumber = (value: number): string => {
+    return new Intl.NumberFormat('en-US').format(value);
   };
 
   const formatDate = (dateString: string): string => {
@@ -1003,91 +1008,134 @@ async function connectToAPI() {
   };
 
   const generateOccupancyChartData = () => {
+    const selectedPropertyNames = selectedProperties
+      .map(id => currentData.properties.find(p => p.id === id)?.name)
+      .filter(Boolean) as string[];
+
+    const calcRate = (pairs: { monthIndex: number; year: number }[]) => {
+      const totalNights = currentData.reservations
+        .filter(r => selectedPropertyNames.includes(r.property))
+        .reduce((sum, r) => {
+          return sum + pairs.reduce((inner, { monthIndex, year }) => {
+            return inner + getNightsInMonth(r.checkin, r.checkout, monthIndex, year);
+          }, 0);
+        }, 0);
+      const totalDays = pairs.reduce(
+        (sum, { monthIndex, year }) => sum + new Date(year, monthIndex + 1, 0).getDate(),
+        0
+      );
+      const availableNights = selectedProperties.length * totalDays;
+      return availableNights ? (totalNights / availableNights) * 100 : 0;
+    };
+
     if (currentView === 'seasonal') {
+      const year = Number(selectedYear);
       const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
-      return seasons.map((season) => {
-        const data: Record<string, any> = { month: season };
-        selectedProperties.forEach(propertyId => {
-          const property = currentData.properties.find(p => p.id === propertyId);
-          if (property) {
-            const seasonalMultipliers = { Winter: 0.8, Spring: 1.0, Summer: 1.3, Fall: 1.1 };
-            const baseOccupancy = property.occupancy;
-            const seasonalOccupancy = baseOccupancy * (seasonalMultipliers[season as keyof typeof seasonalMultipliers] || 1);
-            
-            if (occupancyChartMode === '2025-only') {
-              data[property.name] = Math.max(20, Math.min(100, seasonalOccupancy));
-            } else {
-              data[`${property.name} (2024)`] = Math.max(20, Math.min(100, seasonalOccupancy - 8));
-              data[`${property.name} (2025)`] = Math.max(20, Math.min(100, seasonalOccupancy));
-            }
-          }
-        });
-        return data;
+      const seasonMonths: Record<string, { monthIndex: number; year: number }[]> = {
+        Winter: [
+          { monthIndex: 11, year: year - 1 },
+          { monthIndex: 0, year },
+          { monthIndex: 1, year }
+        ],
+        Spring: [
+          { monthIndex: 2, year },
+          { monthIndex: 3, year },
+          { monthIndex: 4, year }
+        ],
+        Summer: [
+          { monthIndex: 5, year },
+          { monthIndex: 6, year },
+          { monthIndex: 7, year }
+        ],
+        Fall: [
+          { monthIndex: 8, year },
+          { monthIndex: 9, year },
+          { monthIndex: 10, year }
+        ]
+      };
+      return seasons.map(season => {
+        if (occupancyChartMode === '2025-only') {
+          const occupancy = calcRate(seasonMonths[season]);
+          return { month: season, occupancy };
+        } else {
+          const current = calcRate(seasonMonths[season]);
+          const prevSeasonMonths = seasonMonths[season].map(({ monthIndex, year }) => ({
+            monthIndex,
+            year: year - 1
+          }));
+          const prev = calcRate(prevSeasonMonths);
+          const yearLabel = year.toString();
+          const prevLabel = (year - 1).toString();
+          return { month: season, [prevLabel]: prev, [yearLabel]: current };
+        }
       });
     } else {
       const months = getRolling12Months(
         monthsList.indexOf(selectedMonth),
         Number(selectedYear)
       );
-      return months.map((m, index) => {
-        const data: Record<string, any> = { month: m.label };
-        selectedProperties.forEach(propertyId => {
-          const property = currentData.properties.find(p => p.id === propertyId);
-          if (property) {
-            const baseOccupancy = property.occupancy;
-            const variation = Math.sin(index * 0.5) * 10;
-
-            if (occupancyChartMode === '2025-only') {
-              data[property.name] = Math.max(20, Math.min(100, baseOccupancy + variation));
-            } else {
-              data[`${property.name} (2024)`] = Math.max(
-                20,
-                Math.min(100, baseOccupancy + variation - 8)
-              );
-              data[`${property.name} (2025)`] = Math.max(
-                20,
-                Math.min(100, baseOccupancy + variation)
-              );
-            }
-          }
+      if (occupancyChartMode === '2025-only') {
+        return months.map(m => {
+          const occupancy = calcRate([{ monthIndex: m.monthIndex, year: m.year }]);
+          return { month: m.label, occupancy };
         });
-        return data;
-      });
+      } else {
+        const year = Number(selectedYear);
+        const prevYear = year - 1;
+        return months.map(m => {
+          const current = calcRate([{ monthIndex: m.monthIndex, year }]);
+          const prev = calcRate([{ monthIndex: m.monthIndex, year: prevYear }]);
+          return {
+            month: m.label,
+            [prevYear]: prev,
+            [year]: current
+          };
+        });
+      }
     }
   };
 
   const generateRevenueChartData = () => {
+    const selectedPropertyNames = selectedProperties
+      .map(id => currentData.properties.find(p => p.id === id)?.name)
+      .filter(Boolean) as string[];
     if (currentView === 'seasonal') {
       const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
+      const seasonMonths: Record<string, number[]> = {
+        Winter: [11, 0, 1],
+        Spring: [2, 3, 4],
+        Summer: [5, 6, 7],
+        Fall: [8, 9, 10]
+      };
       return seasons.map((season) => {
-        const data: Record<string, any> = { month: season };
-        selectedProperties.forEach(propertyId => {
-          const property = currentData.properties.find(p => p.id === propertyId);
-          if (property) {
-            const seasonalMultipliers = { Winter: 0.7, Spring: 1.0, Summer: 1.6, Fall: 1.2 };
-            const baseRevenue = property.revenue * 90;
-            const seasonalRevenue = baseRevenue * (seasonalMultipliers[season as keyof typeof seasonalMultipliers] || 1);
-            data[property.name] = Math.round(seasonalRevenue);
-          }
-        });
-        return data;
+        const total = currentData.reservations
+          .filter(r => selectedPropertyNames.includes(r.property))
+          .filter(r => seasonMonths[season].includes(new Date(r.checkin).getMonth()))
+          .reduce((sum, r) => {
+            return revenueMetric === 'amount'
+              ? sum + r.revenue
+              : sum + toNights(r.checkin, r.checkout);
+          }, 0);
+        return { month: season, value: total };
       });
     } else {
       const months = getRolling12Months(
         monthsList.indexOf(selectedMonth),
         Number(selectedYear)
       );
-      return months.map((m, index) => {
-        const data: Record<string, any> = { month: m.label };
-        selectedProperties.forEach(propertyId => {
-          const property = currentData.properties.find(p => p.id === propertyId);
-          if (property) {
-            const baseRevenue = property.revenue * 14;
-            const seasonalMultiplier = 1 + Math.sin((index + 5) * 0.5) * 0.4;
-            data[property.name] = Math.round(baseRevenue * seasonalMultiplier);
-          }
-        });
-        return data;
+      return months.map(({ label, monthIndex, year }) => {
+        const total = currentData.reservations
+          .filter(r => selectedPropertyNames.includes(r.property))
+          .filter(r => {
+            const d = new Date(r.checkin);
+            return d.getMonth() === monthIndex && d.getFullYear() === year;
+          })
+          .reduce((sum, r) => {
+            return revenueMetric === 'amount'
+              ? sum + r.revenue
+              : sum + getNightsInMonth(r.checkin, r.checkout, monthIndex, year);
+          }, 0);
+        return { month: label, value: total };
       });
     }
   };
@@ -1262,56 +1310,90 @@ async function connectToAPI() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Left Column: Charts and Reservations Table */}
             <div className="lg:col-span-2 space-y-8">
-              {/* Revenue Chart */}
+              {/* Revenue / Days Booked Chart */}
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-gray-200">
                   <div className="flex justify-between items-center">
-                    <h3 className="text-xl font-semibold text-gray-900">Revenue by Property</h3>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setRevenueChartMode('monthly')}
-                        className={`px-3 py-1 text-xs rounded transition-colors ${
-                          revenueChartMode === 'monthly' 
-                            ? 'text-white' 
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                        style={{ backgroundColor: revenueChartMode === 'monthly' ? BRAND_COLORS.primary : undefined }}
-                      >
-                        Monthly
-                      </button>
-                      <button
-                        onClick={() => setRevenueChartMode('ytd')}
-                        className={`px-3 py-1 text-xs rounded transition-colors ${
-                          revenueChartMode === 'ytd' 
-                            ? 'text-white' 
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                        style={{ backgroundColor: revenueChartMode === 'ytd' ? BRAND_COLORS.primary : undefined }}
-                      >
-                        YTD
-                      </button>
+                    <h3 className="text-xl font-semibold text-gray-900">
+                      {revenueMetric === 'amount' ? 'Total Revenue' : 'Days Booked'}
+                    </h3>
+                    <div className="flex gap-2 items-center">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setRevenueMetric('amount')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            revenueMetric === 'amount'
+                              ? 'text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          style={{ backgroundColor: revenueMetric === 'amount' ? BRAND_COLORS.primary : undefined }}
+                        >
+                          Amount
+                        </button>
+                        <button
+                          onClick={() => setRevenueMetric('nights')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            revenueMetric === 'nights'
+                              ? 'text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          style={{ backgroundColor: revenueMetric === 'nights' ? BRAND_COLORS.primary : undefined }}
+                        >
+                          Days Booked
+                        </button>
+                      </div>
+                      <div className="flex gap-2 ml-4">
+                        <button
+                          onClick={() => setRevenueChartMode('monthly')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            revenueChartMode === 'monthly'
+                              ? 'text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          style={{ backgroundColor: revenueChartMode === 'monthly' ? BRAND_COLORS.primary : undefined }}
+                        >
+                          Monthly
+                        </button>
+                        <button
+                          onClick={() => setRevenueChartMode('ytd')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            revenueChartMode === 'ytd'
+                              ? 'text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          style={{ backgroundColor: revenueChartMode === 'ytd' ? BRAND_COLORS.primary : undefined }}
+                        >
+                          YTD
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
                 <div className="p-6">
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={generateRevenueChartData()}>
+                    <BarChart data={generateRevenueChartData()} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" />
-                      <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`} />
-                      <Tooltip formatter={(value: number, name: string) => [`$${Number(value).toLocaleString()}`, name]} />
+                      <YAxis
+                        width={80}
+                        tickFormatter={(value) =>
+                          revenueMetric === 'amount' ? formatCurrency(value) : formatNumber(value)
+                        }
+                        domain={[0, (dataMax: number) => dataMax * 1.1]}
+                      />
+                      <Tooltip
+                        formatter={(value: number) => [
+                          revenueMetric === 'amount' ? formatCurrency(value) : formatNumber(value),
+                          revenueMetric === 'amount' ? 'Revenue' : 'Days Booked'
+                        ]}
+                      />
                       <Legend />
-                      {selectedProperties.map(propertyId => {
-                        const property = currentData.properties.find(p => p.id === propertyId);
-                        return property ? (
-                          <Bar 
-                            key={property.id} 
-                            dataKey={property.name} 
-                            fill={property.color}
-                            radius={[4, 4, 0, 0]}
-                          />
-                        ) : null;
-                      })}
+                      <Bar
+                        dataKey="value"
+                        name={revenueMetric === 'amount' ? 'Revenue' : 'Days Booked'}
+                        fill={BRAND_COLORS.primary}
+                        radius={[4, 4, 0, 0]}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1424,48 +1506,40 @@ async function connectToAPI() {
                     <LineChart data={generateOccupancyChartData()}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" />
-                      <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
-                      <Tooltip formatter={(value: any) => [`${Number(value).toFixed(1)}%`, 'Occupancy']} />
+                      <YAxis domain={[0, 100]} tickFormatter={(value) => `${value.toFixed(1)}%`} />
+                      <Tooltip formatter={(value: number) => [`${value.toFixed(1)}%`, 'Occupancy']} />
                       <Legend />
                       {occupancyChartMode === '2025-only' ? (
-                        selectedProperties.map(propertyId => {
-                          const property = currentData.properties.find(p => p.id === propertyId);
-                          return property ? (
-                            <Line 
-                              key={property.id}
-                              type="monotone" 
-                              dataKey={property.name} 
-                              stroke={property.color}
-                              strokeWidth={3}
-                              dot={{ r: 6, fill: property.color }}
-                              activeDot={{ r: 8, fill: property.color }}
-                            />
-                          ) : null;
-                        })
+                        <Line
+                          type="monotone"
+                          dataKey="occupancy"
+                          name="2025"
+                          stroke={BRAND_COLORS.primary}
+                          strokeWidth={3}
+                          dot={{ r: 6, fill: BRAND_COLORS.primary }}
+                          activeDot={{ r: 8, fill: BRAND_COLORS.primary }}
+                        />
                       ) : (
-                        selectedProperties.flatMap(propertyId => {
-                          const property = currentData.properties.find(p => p.id === propertyId);
-                          return property ? [
-                            <Line 
-                              key={`${property.id}-2024`}
-                              type="monotone" 
-                              dataKey={`${property.name} (2024)`} 
-                              stroke={BRAND_COLORS.chart.comparison2024}
-                              strokeWidth={2}
-                              strokeDasharray="5 5"
-                              dot={{ r: 4, fill: BRAND_COLORS.chart.comparison2024 }}
-                            />,
-                            <Line 
-                              key={`${property.id}-2025`}
-                              type="monotone" 
-                              dataKey={`${property.name} (2025)`} 
-                              stroke={BRAND_COLORS.chart.comparison2025}
-                              strokeWidth={3}
-                              dot={{ r: 6, fill: BRAND_COLORS.chart.comparison2025 }}
-                              activeDot={{ r: 8, fill: BRAND_COLORS.chart.comparison2025 }}
-                            />
-                          ] : [];
-                        })
+                        <>
+                          <Line
+                            type="monotone"
+                            dataKey="2024"
+                            name="2024"
+                            stroke={BRAND_COLORS.chart.comparison2024}
+                            strokeWidth={2}
+                            strokeDasharray="5 5"
+                            dot={{ r: 4, fill: BRAND_COLORS.chart.comparison2024 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="2025"
+                            name="2025"
+                            stroke={BRAND_COLORS.chart.comparison2025}
+                            strokeWidth={3}
+                            dot={{ r: 6, fill: BRAND_COLORS.chart.comparison2025 }}
+                            activeDot={{ r: 8, fill: BRAND_COLORS.chart.comparison2025 }}
+                          />
+                        </>
                       )}
                     </LineChart>
                   </ResponsiveContainer>
