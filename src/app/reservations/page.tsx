@@ -455,6 +455,7 @@ const ReservationsTab: React.FC = () => {
   const [calendarTooltip, setCalendarTooltip] = useState<TooltipState>({ show: false, content: '', x: 0, y: 0 });
   const [occupancyChartMode, setOccupancyChartMode] = useState<ChartMode>('2025-only');
   const [revenueChartMode, setRevenueChartMode] = useState<ChartMode>('monthly');
+  const [revenueMetric, setRevenueMetric] = useState<'amount' | 'nights'>('amount');
   const [newReservationForm, setNewReservationForm] = useState<NewReservationForm>({
     guestName: '',
     guestEmail: '',
@@ -640,6 +641,10 @@ async function connectToAPI() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(amount);
+  };
+
+  const formatNumber = (value: number): string => {
+    return new Intl.NumberFormat('en-US').format(value);
   };
 
   const formatDate = (dateString: string): string => {
@@ -1076,8 +1081,12 @@ async function connectToAPI() {
         const total = currentData.reservations
           .filter(r => selectedPropertyNames.includes(r.property))
           .filter(r => seasonMonths[season].includes(new Date(r.checkin).getMonth()))
-          .reduce((sum, r) => sum + r.revenue, 0);
-        return { month: season, revenue: total };
+          .reduce((sum, r) => {
+            return revenueMetric === 'amount'
+              ? sum + r.revenue
+              : sum + toNights(r.checkin, r.checkout);
+          }, 0);
+        return { month: season, value: total };
       });
     } else {
       const months = getRolling12Months(
@@ -1091,8 +1100,12 @@ async function connectToAPI() {
             const d = new Date(r.checkin);
             return d.getMonth() === monthIndex && d.getFullYear() === year;
           })
-          .reduce((sum, r) => sum + r.revenue, 0);
-        return { month: label, revenue: total };
+          .reduce((sum, r) => {
+            return revenueMetric === 'amount'
+              ? sum + r.revenue
+              : sum + getNightsInMonth(r.checkin, r.checkout, monthIndex, year);
+          }, 0);
+        return { month: label, value: total };
       });
     }
   };
@@ -1267,46 +1280,90 @@ async function connectToAPI() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Left Column: Charts and Reservations Table */}
             <div className="lg:col-span-2 space-y-8">
-              {/* Revenue Chart */}
+              {/* Revenue / Days Booked Chart */}
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-gray-200">
                   <div className="flex justify-between items-center">
-                    <h3 className="text-xl font-semibold text-gray-900">Total Revenue</h3>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setRevenueChartMode('monthly')}
-                        className={`px-3 py-1 text-xs rounded transition-colors ${
-                          revenueChartMode === 'monthly' 
-                            ? 'text-white' 
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                        style={{ backgroundColor: revenueChartMode === 'monthly' ? BRAND_COLORS.primary : undefined }}
-                      >
-                        Monthly
-                      </button>
-                      <button
-                        onClick={() => setRevenueChartMode('ytd')}
-                        className={`px-3 py-1 text-xs rounded transition-colors ${
-                          revenueChartMode === 'ytd' 
-                            ? 'text-white' 
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                        style={{ backgroundColor: revenueChartMode === 'ytd' ? BRAND_COLORS.primary : undefined }}
-                      >
-                        YTD
-                      </button>
+                    <h3 className="text-xl font-semibold text-gray-900">
+                      {revenueMetric === 'amount' ? 'Total Revenue' : 'Days Booked'}
+                    </h3>
+                    <div className="flex gap-2 items-center">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setRevenueMetric('amount')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            revenueMetric === 'amount'
+                              ? 'text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          style={{ backgroundColor: revenueMetric === 'amount' ? BRAND_COLORS.primary : undefined }}
+                        >
+                          Amount
+                        </button>
+                        <button
+                          onClick={() => setRevenueMetric('nights')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            revenueMetric === 'nights'
+                              ? 'text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          style={{ backgroundColor: revenueMetric === 'nights' ? BRAND_COLORS.primary : undefined }}
+                        >
+                          Days Booked
+                        </button>
+                      </div>
+                      <div className="flex gap-2 ml-4">
+                        <button
+                          onClick={() => setRevenueChartMode('monthly')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            revenueChartMode === 'monthly'
+                              ? 'text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          style={{ backgroundColor: revenueChartMode === 'monthly' ? BRAND_COLORS.primary : undefined }}
+                        >
+                          Monthly
+                        </button>
+                        <button
+                          onClick={() => setRevenueChartMode('ytd')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            revenueChartMode === 'ytd'
+                              ? 'text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          style={{ backgroundColor: revenueChartMode === 'ytd' ? BRAND_COLORS.primary : undefined }}
+                        >
+                          YTD
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
                 <div className="p-6">
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={generateRevenueChartData()}>
+                    <BarChart data={generateRevenueChartData()} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" />
-                      <YAxis tickFormatter={(value) => formatCurrency(value)} />
-                      <Tooltip formatter={(value: number) => [formatCurrency(value), 'Revenue']} />
+                      <YAxis
+                        width={80}
+                        tickFormatter={(value) =>
+                          revenueMetric === 'amount' ? formatCurrency(value) : formatNumber(value)
+                        }
+                        domain={[0, (dataMax: number) => dataMax * 1.1]}
+                      />
+                      <Tooltip
+                        formatter={(value: number) => [
+                          revenueMetric === 'amount' ? formatCurrency(value) : formatNumber(value),
+                          revenueMetric === 'amount' ? 'Revenue' : 'Days Booked'
+                        ]}
+                      />
                       <Legend />
-                      <Bar dataKey="revenue" fill={BRAND_COLORS.primary} radius={[4, 4, 0, 0]} />
+                      <Bar
+                        dataKey="value"
+                        name={revenueMetric === 'amount' ? 'Revenue' : 'Days Booked'}
+                        fill={BRAND_COLORS.primary}
+                        radius={[4, 4, 0, 0]}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
