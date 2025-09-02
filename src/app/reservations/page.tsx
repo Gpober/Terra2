@@ -637,8 +637,8 @@ async function connectToAPI() {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
     }).format(amount);
   };
 
@@ -1006,23 +1006,28 @@ async function connectToAPI() {
     if (currentView === 'seasonal') {
       const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
       return seasons.map((season) => {
-        const data: Record<string, any> = { month: season };
+        const seasonalMultipliers = { Winter: 0.8, Spring: 1.0, Summer: 1.3, Fall: 1.1 };
+        let total2025 = 0;
+        let total2024 = 0;
         selectedProperties.forEach(propertyId => {
           const property = currentData.properties.find(p => p.id === propertyId);
           if (property) {
-            const seasonalMultipliers = { Winter: 0.8, Spring: 1.0, Summer: 1.3, Fall: 1.1 };
             const baseOccupancy = property.occupancy;
             const seasonalOccupancy = baseOccupancy * (seasonalMultipliers[season as keyof typeof seasonalMultipliers] || 1);
-            
-            if (occupancyChartMode === '2025-only') {
-              data[property.name] = Math.max(20, Math.min(100, seasonalOccupancy));
-            } else {
-              data[`${property.name} (2024)`] = Math.max(20, Math.min(100, seasonalOccupancy - 8));
-              data[`${property.name} (2025)`] = Math.max(20, Math.min(100, seasonalOccupancy));
-            }
+            const occ2025 = Math.max(20, Math.min(100, seasonalOccupancy));
+            total2025 += occ2025;
+            const occ2024 = Math.max(20, Math.min(100, seasonalOccupancy - 8));
+            total2024 += occ2024;
           }
         });
-        return data;
+        if (occupancyChartMode === '2025-only') {
+          const avg2025 = selectedProperties.length ? total2025 / selectedProperties.length : 0;
+          return { month: season, occupancy: avg2025 };
+        } else {
+          const avg2025 = selectedProperties.length ? total2025 / selectedProperties.length : 0;
+          const avg2024 = selectedProperties.length ? total2024 / selectedProperties.length : 0;
+          return { month: season, '2024': avg2024, '2025': avg2025 };
+        }
       });
     } else {
       const months = getRolling12Months(
@@ -1030,64 +1035,64 @@ async function connectToAPI() {
         Number(selectedYear)
       );
       return months.map((m, index) => {
-        const data: Record<string, any> = { month: m.label };
+        let total2025 = 0;
+        let total2024 = 0;
         selectedProperties.forEach(propertyId => {
           const property = currentData.properties.find(p => p.id === propertyId);
           if (property) {
             const baseOccupancy = property.occupancy;
             const variation = Math.sin(index * 0.5) * 10;
-
-            if (occupancyChartMode === '2025-only') {
-              data[property.name] = Math.max(20, Math.min(100, baseOccupancy + variation));
-            } else {
-              data[`${property.name} (2024)`] = Math.max(
-                20,
-                Math.min(100, baseOccupancy + variation - 8)
-              );
-              data[`${property.name} (2025)`] = Math.max(
-                20,
-                Math.min(100, baseOccupancy + variation)
-              );
-            }
+            const occ2025 = Math.max(20, Math.min(100, baseOccupancy + variation));
+            total2025 += occ2025;
+            const occ2024 = Math.max(20, Math.min(100, baseOccupancy + variation - 8));
+            total2024 += occ2024;
           }
         });
-        return data;
+        if (occupancyChartMode === '2025-only') {
+          const avg2025 = selectedProperties.length ? total2025 / selectedProperties.length : 0;
+          return { month: m.label, occupancy: avg2025 };
+        } else {
+          const avg2025 = selectedProperties.length ? total2025 / selectedProperties.length : 0;
+          const avg2024 = selectedProperties.length ? total2024 / selectedProperties.length : 0;
+          return { month: m.label, '2024': avg2024, '2025': avg2025 };
+        }
       });
     }
   };
 
   const generateRevenueChartData = () => {
+    const selectedPropertyNames = selectedProperties
+      .map(id => currentData.properties.find(p => p.id === id)?.name)
+      .filter(Boolean) as string[];
     if (currentView === 'seasonal') {
       const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
+      const seasonMonths: Record<string, number[]> = {
+        Winter: [11, 0, 1],
+        Spring: [2, 3, 4],
+        Summer: [5, 6, 7],
+        Fall: [8, 9, 10]
+      };
       return seasons.map((season) => {
-        const data: Record<string, any> = { month: season };
-        selectedProperties.forEach(propertyId => {
-          const property = currentData.properties.find(p => p.id === propertyId);
-          if (property) {
-            const seasonalMultipliers = { Winter: 0.7, Spring: 1.0, Summer: 1.6, Fall: 1.2 };
-            const baseRevenue = property.revenue * 90;
-            const seasonalRevenue = baseRevenue * (seasonalMultipliers[season as keyof typeof seasonalMultipliers] || 1);
-            data[property.name] = Math.round(seasonalRevenue);
-          }
-        });
-        return data;
+        const total = currentData.reservations
+          .filter(r => selectedPropertyNames.includes(r.property))
+          .filter(r => seasonMonths[season].includes(new Date(r.checkin).getMonth()))
+          .reduce((sum, r) => sum + r.revenue, 0);
+        return { month: season, revenue: total };
       });
     } else {
       const months = getRolling12Months(
         monthsList.indexOf(selectedMonth),
         Number(selectedYear)
       );
-      return months.map((m, index) => {
-        const data: Record<string, any> = { month: m.label };
-        selectedProperties.forEach(propertyId => {
-          const property = currentData.properties.find(p => p.id === propertyId);
-          if (property) {
-            const baseRevenue = property.revenue * 14;
-            const seasonalMultiplier = 1 + Math.sin((index + 5) * 0.5) * 0.4;
-            data[property.name] = Math.round(baseRevenue * seasonalMultiplier);
-          }
-        });
-        return data;
+      return months.map(({ label, monthIndex, year }) => {
+        const total = currentData.reservations
+          .filter(r => selectedPropertyNames.includes(r.property))
+          .filter(r => {
+            const d = new Date(r.checkin);
+            return d.getMonth() === monthIndex && d.getFullYear() === year;
+          })
+          .reduce((sum, r) => sum + r.revenue, 0);
+        return { month: label, revenue: total };
       });
     }
   };
@@ -1266,7 +1271,7 @@ async function connectToAPI() {
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-gray-200">
                   <div className="flex justify-between items-center">
-                    <h3 className="text-xl font-semibold text-gray-900">Revenue by Property</h3>
+                    <h3 className="text-xl font-semibold text-gray-900">Total Revenue</h3>
                     <div className="flex gap-2">
                       <button
                         onClick={() => setRevenueChartMode('monthly')}
@@ -1298,20 +1303,10 @@ async function connectToAPI() {
                     <BarChart data={generateRevenueChartData()}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="month" />
-                      <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`} />
-                      <Tooltip formatter={(value: number, name: string) => [`$${Number(value).toLocaleString()}`, name]} />
+                      <YAxis tickFormatter={(value) => formatCurrency(value)} />
+                      <Tooltip formatter={(value: number) => [formatCurrency(value), 'Revenue']} />
                       <Legend />
-                      {selectedProperties.map(propertyId => {
-                        const property = currentData.properties.find(p => p.id === propertyId);
-                        return property ? (
-                          <Bar 
-                            key={property.id} 
-                            dataKey={property.name} 
-                            fill={property.color}
-                            radius={[4, 4, 0, 0]}
-                          />
-                        ) : null;
-                      })}
+                      <Bar dataKey="revenue" fill={BRAND_COLORS.primary} radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1428,44 +1423,36 @@ async function connectToAPI() {
                       <Tooltip formatter={(value: any) => [`${Number(value).toFixed(1)}%`, 'Occupancy']} />
                       <Legend />
                       {occupancyChartMode === '2025-only' ? (
-                        selectedProperties.map(propertyId => {
-                          const property = currentData.properties.find(p => p.id === propertyId);
-                          return property ? (
-                            <Line 
-                              key={property.id}
-                              type="monotone" 
-                              dataKey={property.name} 
-                              stroke={property.color}
-                              strokeWidth={3}
-                              dot={{ r: 6, fill: property.color }}
-                              activeDot={{ r: 8, fill: property.color }}
-                            />
-                          ) : null;
-                        })
+                        <Line
+                          type="monotone"
+                          dataKey="occupancy"
+                          name="2025"
+                          stroke={BRAND_COLORS.primary}
+                          strokeWidth={3}
+                          dot={{ r: 6, fill: BRAND_COLORS.primary }}
+                          activeDot={{ r: 8, fill: BRAND_COLORS.primary }}
+                        />
                       ) : (
-                        selectedProperties.flatMap(propertyId => {
-                          const property = currentData.properties.find(p => p.id === propertyId);
-                          return property ? [
-                            <Line 
-                              key={`${property.id}-2024`}
-                              type="monotone" 
-                              dataKey={`${property.name} (2024)`} 
-                              stroke={BRAND_COLORS.chart.comparison2024}
-                              strokeWidth={2}
-                              strokeDasharray="5 5"
-                              dot={{ r: 4, fill: BRAND_COLORS.chart.comparison2024 }}
-                            />,
-                            <Line 
-                              key={`${property.id}-2025`}
-                              type="monotone" 
-                              dataKey={`${property.name} (2025)`} 
-                              stroke={BRAND_COLORS.chart.comparison2025}
-                              strokeWidth={3}
-                              dot={{ r: 6, fill: BRAND_COLORS.chart.comparison2025 }}
-                              activeDot={{ r: 8, fill: BRAND_COLORS.chart.comparison2025 }}
-                            />
-                          ] : [];
-                        })
+                        <>
+                          <Line
+                            type="monotone"
+                            dataKey="2024"
+                            name="2024"
+                            stroke={BRAND_COLORS.chart.comparison2024}
+                            strokeWidth={2}
+                            strokeDasharray="5 5"
+                            dot={{ r: 4, fill: BRAND_COLORS.chart.comparison2024 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="2025"
+                            name="2025"
+                            stroke={BRAND_COLORS.chart.comparison2025}
+                            strokeWidth={3}
+                            dot={{ r: 6, fill: BRAND_COLORS.chart.comparison2025 }}
+                            activeDot={{ r: 8, fill: BRAND_COLORS.chart.comparison2025 }}
+                          />
+                        </>
                       )}
                     </LineChart>
                   </ResponsiveContainer>
