@@ -1,7 +1,8 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { Calendar, Download, RefreshCw, Plus, X, ChevronDown } from 'lucide-react';
+import { Download, RefreshCw, Plus, X, ChevronDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { supabase } from '@/lib/supabaseClient';
 
 // Constants
 const BRAND_COLORS = {
@@ -33,6 +34,8 @@ const BRAND_COLORS = {
     900: '#0F172A'
   }
 };
+
+const PROPERTY_PALETTE = ['#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#3B82F6'];
 
 // Types
 type Property = {
@@ -77,6 +80,20 @@ type KPIs = {
   occupancyRate: number;
 };
 
+type DBReservationRow = {
+  id: string;
+  check_in: string | null;
+  check_out: string | null;
+  confirmation_code: string | null;
+  listing: string | null;
+  guest: string | null;
+  reservation_id: string | null;
+  net_income: number | null;
+  source: string | null;
+  qbo_listing: string | null;
+  created_at: string;
+};
+
 type NotificationState = {
   show: boolean;
   message: string;
@@ -102,6 +119,26 @@ type NewReservationForm = {
 };
 
 type ChartMode = 'monthly' | 'seasonal' | 'ytd' | '2025-only' | 'comparison';
+
+// Helpers
+const slugify = (qbo_listing: string): string =>
+  qbo_listing.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+const toNights = (checkIn?: string | null, checkOut?: string | null): number => {
+  if (!checkIn || !checkOut) return 0;
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+  const diff = end.getTime() - start.getTime();
+  return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
+};
+
+const calculateKPIsFromReservations = (reservations: Reservation[]): KPIs => {
+  const totalRevenue = reservations.reduce((sum, r) => sum + r.revenue, 0);
+  const totalNights = reservations.reduce((sum, r) => sum + r.nights, 0);
+  const avgNightlyRate = totalNights ? totalRevenue / totalNights : 0;
+  const avgStayLength = reservations.length ? totalNights / reservations.length : 0;
+  return { totalRevenue, avgNightlyRate, avgStayLength, occupancyRate: 82 };
+};
 
 // Components
 const IAMCFOLogo = ({ className = "w-8 h-8" }: { className?: string }) => (
@@ -413,16 +450,19 @@ const ReservationsTab: React.FC = () => {
 const [syncing, setSyncing] = useState(false);
   
   // Add these new state variables for backend integration
-  const [loading, setLoading] = useState(false);
   const [isConnectedToBackend, setIsConnectedToBackend] = useState(false);
-  const [backendData, setBackendData] = useState(null);
-// Load data when component mounts
+  const [backendData, setBackendData] = useState<{
+    properties: Property[];
+    reservations: Reservation[];
+    kpis?: KPIs;
+  } | null>(null);
+  // Load data when component mounts
   useEffect(() => {
-    loadDashboardData();
+    loadFromSupabase();
   }, []);
 
 // Use backend data if available, otherwise use demo data
-  const currentData = backendData || {
+  const currentData = backendData ?? {
     properties: [
       {
         id: 'miami-beach',
@@ -520,29 +560,30 @@ const [syncing, setSyncing] = useState(false);
   };
 
  // API connection function
-const connectToAPI = async () => {
+async function connectToAPI() {
   setSyncing(true);
   try {
-    const response = await fetch('https://iamcfo-guesty-backend.onrender.com/api/guesty/sync', { 
+    const response = await fetch('https://iamcfo-guesty-backend.onrender.com/api/guesty/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
-    
+
     if (response.ok) {
       showNotification('Guesty sync started successfully!', 'success');
       // Wait a few seconds then reload data
       setTimeout(() => {
-        loadDashboardData();
+        loadFromSupabase();
       }, 3000);
     } else {
       showNotification('Backend sync failed - using demo data', 'error');
     }
   } catch (error) {
+    console.error(error);
     showNotification('Backend not reachable - using demo data', 'error');
   } finally {
     setSyncing(false);
   }
-};
+}
 
   // Utility functions
   const formatCurrency = (amount: number): string => {
@@ -575,12 +616,8 @@ const connectToAPI = async () => {
   };
 
   const getPropertyId = (propertyName: string): string => {
-    const propertyMap: Record<string, string> = {
-      'Miami Beach Condo': 'miami-beach',
-      'Downtown Loft': 'downtown-loft',
-      'Suburb House': 'suburb-house'
-    };
-    return propertyMap[propertyName] || 'miami-beach';
+    const property = currentData.properties.find(p => p.name === propertyName);
+    return property ? property.id : slugify(propertyName);
   };
 
   const handlePropertyCheckboxChange = (propertyId: string): void => {
@@ -608,45 +645,78 @@ const connectToAPI = async () => {
       selectedPropertyNames.includes(r.property)
     );
   };
-// Backend data loading function
-const loadDashboardData = async () => {
-  try {
-    setLoading(true);
-    const [propertiesRes, reservationsRes, kpisRes] = await Promise.all([
-      fetch('https://iamcfo-guesty-backend.onrender.com/api/dashboard/properties').catch(() => null),
-      fetch('https://iamcfo-guesty-backend.onrender.com/api/dashboard/reservations').catch(() => null),
-      fetch('https://iamcfo-guesty-backend.onrender.com/api/dashboard/kpis').catch(() => null)
-    ]);
+  // Backend data loading function
+  const loadFromSupabase = async (): Promise<void> => {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('id, check_in, check_out, confirmation_code, listing, guest, reservation_id, net_income, source, qbo_listing, created_at')
+        .not('qbo_listing', 'is', null);
 
-    if (propertiesRes?.ok && reservationsRes?.ok) {
-      const [propertiesData, reservationsData, kpisData] = await Promise.all([
-        propertiesRes.json(),
-        reservationsRes.json(),
-        kpisRes?.json() || {}
-      ]);
-      
-      // Update with real backend data
-      setBackendData({
-  properties: propertiesData.properties || [],
-  reservations: reservationsData.reservations || [],
-  kpis: kpisData
-});
-      
+      if (error) throw error;
+      const rows: DBReservationRow[] = (data as DBReservationRow[]) || [];
+
+      const propertiesMap = new Map<string, Property>();
+      const reservations: Reservation[] = [];
+
+      const hashId = (value: string): number => {
+        let hash = 0;
+        for (let i = 0; i < value.length; i++) {
+          hash = Math.imul(31, hash) + value.charCodeAt(i);
+        }
+        return Math.abs(hash);
+      };
+
+      rows.forEach((row) => {
+        const propertyName = row.qbo_listing ?? 'Unknown Property';
+        let property = propertiesMap.get(propertyName);
+        if (!property) {
+          const color = PROPERTY_PALETTE[propertiesMap.size % PROPERTY_PALETTE.length];
+          property = {
+            id: slugify(propertyName),
+            name: propertyName,
+            type: 'Listing',
+            description: 'Guesty / QBO Location',
+            revenue: 0,
+            occupancy: 80,
+            noi: 0,
+            color,
+          };
+          propertiesMap.set(propertyName, property);
+        }
+        const revenue = row.net_income ?? 0;
+        property.revenue += revenue;
+        property.noi = Math.round(property.revenue * 0.6);
+
+        const reservationId = row.reservation_id || row.id;
+        reservations.push({
+          id: hashId(reservationId),
+          guest: row.guest && row.guest.trim() !== '' ? row.guest : 'Unknown Guest',
+          email: '',
+          phone: '',
+          property: propertyName,
+          checkin: row.check_in ?? '',
+          checkout: row.check_out ?? '',
+          nights: toNights(row.check_in, row.check_out),
+          revenue,
+          status: 'confirmed',
+        });
+      });
+
+      const properties = Array.from(propertiesMap.values());
+      const kpis = calculateKPIsFromReservations(reservations);
+      setBackendData({ properties, reservations, kpis });
+      setSelectedProperties(properties.map((p) => p.id));
       setIsConnectedToBackend(true);
       showNotification('Connected to live Guesty data!', 'success');
-    } else {
+    } catch (err) {
+      console.error('Failed to load reservations', err);
       setIsConnectedToBackend(false);
-      showNotification('Using demo data - backend connecting...', 'info');
+      showNotification('Using demo data - backend not reachable', 'error');
     }
-  } catch (error) {
-  setIsConnectedToBackend(false);
-  showNotification('Using demo data - backend will connect when Guesty credentials are added', 'info');
-} finally {
-  setLoading(false);
-}
-};
+  };
   
-  const calculateKPIs = (): KPIs => {
+  const calculateDemoKPIs = (): KPIs => {
     const filteredReservations = getFilteredReservations();
     const totalRevenue = filteredReservations.reduce((sum, r) => sum + r.revenue, 0);
     const totalNights = filteredReservations.reduce((sum, r) => sum + r.nights, 0);
@@ -665,7 +735,6 @@ const loadDashboardData = async () => {
     const year = currentCalendarDate.getFullYear();
     const month = currentCalendarDate.getMonth();
     const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
     const startDate = new Date(firstDay);
     startDate.setDate(startDate.getDate() - firstDay.getDay());
 
@@ -952,7 +1021,9 @@ const loadDashboardData = async () => {
     }
   };
 
-  const kpis = calculateKPIs();
+  const kpis = backendData
+    ? calculateKPIsFromReservations(getFilteredReservations())
+    : calculateDemoKPIs();
   const calendar = generateCalendar();
 
   return (
