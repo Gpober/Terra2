@@ -177,7 +177,7 @@ type RankingMetric =
   | "arCurrent"
   | "arOverdue";
 
-const insights: Insight[] = [
+const defaultInsights: Insight[] = [
   {
     title: "Revenue trending up",
     message: "Revenue increased compared to last period.",
@@ -820,6 +820,41 @@ export default function EnhancedMobileDashboard() {
     }
     return formatCurrency(n);
   };
+
+  const reservationInsights = useMemo(() => {
+    if (reportType !== "res" || !properties.length) return [];
+    const topByDays = properties.reduce(
+      (max, p) => (p.daysBooked || 0) > (max.daysBooked || 0) ? p : max,
+      properties[0]
+    );
+    const topByRevenue = properties.reduce(
+      (max, p) => (p.revenue || 0) > (max.revenue || 0) ? p : max,
+      properties[0]
+    );
+    const occupancy = companyTotals.occupancyRate || 0;
+    return [
+      {
+        title: "Top Booked Property",
+        message: `${topByDays.name} with ${topByDays.daysBooked} days booked`,
+        icon: Award,
+        type: "info",
+      },
+      {
+        title: "Top Revenue Property",
+        message: `${topByRevenue.name} with ${formatCurrency(topByRevenue.revenue || 0)} revenue`,
+        icon: TrendingUp,
+        type: "success",
+      },
+      {
+        title: "Portfolio Occupancy",
+        message: `${occupancy}% occupancy across all properties`,
+        icon: Target,
+        type: "info",
+      },
+    ];
+  }, [reportType, properties, companyTotals]);
+
+  const displayedInsights = reportType === "res" ? reservationInsights : defaultInsights;
 
   const rankingLabels: Record<RankingMetric, string> = {
     revenue: "Revenue",
@@ -1834,7 +1869,7 @@ export default function EnhancedMobileDashboard() {
             </div>
 
             <div style={{ display: 'grid', gap: '12px' }}>
-              {insights.map((insight, index) => {
+              {displayedInsights.map((insight, index) => {
                 const Icon = insight.icon;
                 const bgColor = insight.type === 'success' ? '#f0f9ff' : 
                                insight.type === 'warning' ? '#fffbeb' : '#f8fafc';
