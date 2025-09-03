@@ -55,6 +55,9 @@ interface PropertySummary {
   days90?: number;
   over90?: number;
   total?: number;
+  occupancyRate?: number;
+  daysBooked?: number;
+  availableDays?: number;
 }
 
 interface Category {
@@ -81,6 +84,16 @@ interface ARTransaction {
   daysOutstanding: number;
   customer: string;
   memo?: string | null;
+}
+
+interface Reservation {
+  id: number;
+  guest: string;
+  property: string;
+  checkin: string;
+  checkout: string;
+  nights: number;
+  revenue: number;
 }
 
 interface JournalRow {
@@ -135,6 +148,14 @@ const getAgingColor = (days: number) => {
   return BRAND_COLORS.danger;
 };
 
+const diffNights = (checkIn: string | null, checkOut: string | null) => {
+  if (!checkIn || !checkOut) return 0;
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+  const diff = end.getTime() - start.getTime();
+  return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
+};
+
 type Insight = {
   title: string;
   message: string;
@@ -154,9 +175,11 @@ type RankingMetric =
   | "cogs"
   | "arTotal"
   | "arCurrent"
-  | "arOverdue";
+  | "arOverdue"
+  | "daysBooked"
+  | "occupancyRate";
 
-const insights: Insight[] = [
+const defaultInsights: Insight[] = [
   {
     title: "Revenue trending up",
     message: "Revenue increased compared to last period.",
@@ -179,7 +202,7 @@ const insights: Insight[] = [
 
 export default function EnhancedMobileDashboard() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [reportType, setReportType] = useState<"pl" | "cf" | "ar">("pl");
+  const [reportType, setReportType] = useState<"pl" | "cf" | "ar" | "res">("pl");
   const [reportPeriod, setReportPeriod] = useState<
     "Monthly" | "Custom" | "Year to Date" | "Trailing 12" | "Quarterly"
   >("Monthly");
@@ -206,6 +229,8 @@ export default function EnhancedMobileDashboard() {
   });
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [arTransactions, setArTransactions] = useState<ARTransaction[]>([]);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [rankingMetric, setRankingMetric] = useState<RankingMetric | null>(null);
   const [journalEntryLines, setJournalEntryLines] = useState<JournalEntryLine[]>([]);
@@ -546,6 +571,31 @@ export default function EnhancedMobileDashboard() {
         return;
       }
 
+      if (reportType === "res") {
+        const { start, end } = getDateRange();
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+        const daysInPeriod = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+        const { data } = await supabase
+          .from("reservations")
+          .select("check_in, check_out, net_income, qbo_listing")
+          .gte("check_in", start)
+          .lte("check_out", end);
+        const map: Record<string, PropertySummary> = {};
+        (data || []).forEach((row: any) => {
+          const property = row.qbo_listing || "Unknown";
+          if (!map[property]) {
+            map[property] = { name: property, revenue: 0, daysBooked: 0, availableDays: daysInPeriod, occupancyRate: 0 };
+          }
+          const nights = diffNights(row.check_in, row.check_out);
+          map[property].revenue = (map[property].revenue || 0) + (Number(row.net_income) || 0);
+          map[property].daysBooked = (map[property].daysBooked || 0) + nights;
+          map[property].occupancyRate = Math.round(((map[property].daysBooked || 0) / daysInPeriod) * 100);
+        });
+        setProperties(Object.values(map));
+        return;
+      }
+
       const { start, end } = getDateRange();
 
       const selectColumns = "account_type, report_category, normal_balance, debit, credit, class, date, entry_bank_account, is_cash_account";
@@ -696,6 +746,27 @@ export default function EnhancedMobileDashboard() {
     }, properties[0]).name;
   }, [properties, reportType]);
 
+  const resRevenueChamp = useMemo(() => {
+    if (reportType !== "res" || !properties.length) return null;
+    return properties.reduce((max, p) =>
+      (p.revenue || 0) > (max.revenue || 0) ? p : max,
+    properties[0]).name;
+  }, [properties, reportType]);
+
+  const bookingBoss = useMemo(() => {
+    if (reportType !== "res" || !properties.length) return null;
+    return properties.reduce((max, p) =>
+      (p.daysBooked || 0) > (max.daysBooked || 0) ? p : max,
+    properties[0]).name;
+  }, [properties, reportType]);
+
+  const occupancyAce = useMemo(() => {
+    if (reportType !== "res" || !properties.length) return null;
+    return properties.reduce((max, p) =>
+      (p.occupancyRate || 0) > (max.occupancyRate || 0) ? p : max,
+    properties[0]).name;
+  }, [properties, reportType]);
+
   const avgDays = useMemo(() => {
     if (reportType !== "ar" || !properties.length) return 0;
     const weighted = properties.reduce((sum, p) =>
@@ -717,6 +788,11 @@ export default function EnhancedMobileDashboard() {
         acc.financing += p.financing || 0;
         acc.investing += p.investing || 0;
         acc.net += (p.operating || 0) + (p.financing || 0) + (p.investing || 0);
+      } else if (reportType === "res") {
+        acc.revenue += p.revenue || 0;
+        acc.daysBooked += p.daysBooked || 0;
+        acc.availableDays += p.availableDays || 0;
+        acc.net += p.revenue || 0;
       } else {
         acc.current += p.current || 0;
         acc.days30 += p.days30 || 0;
@@ -740,8 +816,17 @@ export default function EnhancedMobileDashboard() {
       days60: 0,
       days90: 0,
       over90: 0,
+      daysBooked: 0,
+      availableDays: 0,
+      occupancyRate: 0,
     },
   );
+
+  if (reportType === "res") {
+    companyTotals.occupancyRate = companyTotals.availableDays
+      ? Math.round((companyTotals.daysBooked / companyTotals.availableDays) * 100)
+      : 0;
+  }
 
   const formatCurrency = (n: number) =>
     new Intl.NumberFormat("en-US", {
@@ -759,6 +844,41 @@ export default function EnhancedMobileDashboard() {
     return formatCurrency(n);
   };
 
+  const reservationInsights = useMemo(() => {
+    if (reportType !== "res" || !properties.length) return [];
+    const topByDays = properties.reduce(
+      (max, p) => (p.daysBooked || 0) > (max.daysBooked || 0) ? p : max,
+      properties[0]
+    );
+    const topByRevenue = properties.reduce(
+      (max, p) => (p.revenue || 0) > (max.revenue || 0) ? p : max,
+      properties[0]
+    );
+    const occupancy = companyTotals.occupancyRate || 0;
+    return [
+      {
+        title: "Top Booked Property",
+        message: `${topByDays.name} with ${topByDays.daysBooked} days booked`,
+        icon: Award,
+        type: "info",
+      },
+      {
+        title: "Top Revenue Property",
+        message: `${topByRevenue.name} with ${formatCurrency(topByRevenue.revenue || 0)} revenue`,
+        icon: TrendingUp,
+        type: "success",
+      },
+      {
+        title: "Portfolio Occupancy",
+        message: `${occupancy}% occupancy across all properties`,
+        icon: Target,
+        type: "info",
+      },
+    ];
+  }, [reportType, properties, companyTotals]);
+
+  const displayedInsights = reportType === "res" ? reservationInsights : defaultInsights;
+
   const rankingLabels: Record<RankingMetric, string> = {
     revenue: "Revenue",
     margin: "Margin",
@@ -772,6 +892,8 @@ export default function EnhancedMobileDashboard() {
     arTotal: "Total A/R",
     arCurrent: "Current Ratio",
     arOverdue: "Overdue A/R",
+    daysBooked: "Days Booked",
+    occupancyRate: "Occupancy Rate",
   };
 
   const rankedProperties = useMemo(() => {
@@ -820,6 +942,10 @@ export default function EnhancedMobileDashboard() {
             ((b.total || 0) - (b.current || 0)) -
             ((a.total || 0) - (a.current || 0)),
         );
+      case "daysBooked":
+        return arr.sort((a, b) => (b.daysBooked || 0) - (a.daysBooked || 0));
+      case "occupancyRate":
+        return arr.sort((a, b) => (b.occupancyRate || 0) - (a.occupancyRate || 0));
       default:
         return arr;
     }
@@ -852,6 +978,10 @@ export default function EnhancedMobileDashboard() {
         return `${(rc * 100).toFixed(1)}%`;
       case "arOverdue":
         return formatCompactCurrency((p.total || 0) - (p.current || 0));
+      case "daysBooked":
+        return `${p.daysBooked || 0}`;
+      case "occupancyRate":
+        return `${p.occupancyRate || 0}%`;
       case "netIncome":
       default:
         return formatCompactCurrency(p.netIncome || 0);
@@ -872,6 +1002,7 @@ export default function EnhancedMobileDashboard() {
     setSelectedProperty(name);
     if (reportType === "pl") await loadPL(name);
     else if (reportType === "cf") await loadCF(name);
+    else if (reportType === "res") await loadReservations(name);
     else await loadAR(name);
     setView("report");
   };
@@ -1003,6 +1134,29 @@ export default function EnhancedMobileDashboard() {
     setArTransactions(list);
   };
 
+  const loadReservations = async (propertyName: string | null = selectedProperty) => {
+    const { start, end } = getDateRange();
+    let query = supabase
+      .from("reservations")
+      .select("id, check_in, check_out, net_income, qbo_listing, guest")
+      .gte("check_in", start)
+      .lte("check_out", end);
+    if (propertyName) {
+      query = query.eq("qbo_listing", propertyName);
+    }
+    const { data } = await query;
+    const list: Reservation[] = (data as any[] || []).map((row: any) => ({
+      id: row.id,
+      guest: row.guest || "Unknown Guest",
+      property: row.qbo_listing || "",
+      checkin: row.check_in || "",
+      checkout: row.check_out || "",
+      nights: diffNights(row.check_in, row.check_out),
+      revenue: Number(row.net_income) || 0,
+    }));
+    setReservations(list);
+  };
+
   const handleCategory = async (
     account: string,
     type: "revenue" | "cogs" | "expense" | "operating" | "financing" | "investing",
@@ -1085,7 +1239,10 @@ export default function EnhancedMobileDashboard() {
   };
 
   const back = () => {
-    if (view === "detail") setView("report");
+    if (view === "detail") {
+      setSelectedReservation(null);
+      setView("report");
+    }
     else if (view === "report") setView("overview");
     else if (view === "summary") {
       setRankingMetric(null);
@@ -1155,7 +1312,13 @@ export default function EnhancedMobileDashboard() {
         {/* Dashboard Summary */}
         <div style={{ textAlign: 'center', marginBottom: '16px' }}>
           <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>
-            {reportType === "pl" ? "P&L Dashboard" : reportType === "cf" ? "Cash Flow Dashboard" : "A/R Aging Report"}
+            {reportType === "pl"
+              ? "P&L Dashboard"
+              : reportType === "cf"
+              ? "Cash Flow Dashboard"
+              : reportType === "res"
+              ? "Reservations Dashboard"
+              : "A/R Aging Report"}
           </h1>
           <p style={{ fontSize: '14px', opacity: 0.9 }}>
             {reportType === "ar" ? "As of Today" : `${getMonthName(month)} ${year}`} • {properties.length} Properties
@@ -1244,6 +1407,27 @@ export default function EnhancedMobileDashboard() {
                 <div style={{ fontSize: '11px', opacity: 0.8 }}>Net Cash</div>
               </div>
             </div>
+          ) : reportType === "res" ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', textAlign: 'center' }}>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
+                  {companyTotals.occupancyRate}%
+                </div>
+                <div style={{ fontSize: '11px', opacity: 0.8 }}>Occupancy</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
+                  {formatCompactCurrency(companyTotals.revenue)}
+                </div>
+                <div style={{ fontSize: '11px', opacity: 0.8 }}>Revenue</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
+                  {companyTotals.daysBooked}
+                </div>
+                <div style={{ fontSize: '11px', opacity: 0.8 }}>Days Booked</div>
+              </div>
+            </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', textAlign: 'center' }}>
               <div>
@@ -1309,11 +1493,12 @@ export default function EnhancedMobileDashboard() {
                 fontSize: '16px'
               }}
               value={reportType}
-              onChange={(e) => setReportType(e.target.value as "pl" | "cf" | "ar")}
+              onChange={(e) => setReportType(e.target.value as "pl" | "cf" | "ar" | "res")}
             >
               <option value="pl">P&L Statement</option>
               <option value="cf">Cash Flow Statement</option>
               <option value="ar">A/R Aging Report</option>
+              <option value="res">Reservations</option>
             </select>
           </div>
           {reportType !== "ar" && (
@@ -1630,6 +1815,69 @@ export default function EnhancedMobileDashboard() {
                       </div>
                     </div>
                   </>
+                ) : reportType === "res" ? (
+                  <>
+                    <div onClick={() => showRanking("revenue")} style={{
+                      background: 'white',
+                      borderRadius: '8px',
+                      padding: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      border: `1px solid ${BRAND_COLORS.warning}33`,
+                      cursor: 'pointer'
+                    }}>
+                      <span style={{ fontSize: '20px' }}>👑</span>
+                      <div>
+                        <div style={{ fontSize: '11px', color: BRAND_COLORS.warning, fontWeight: '600' }}>
+                          REV CHAMP
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#64748b' }}>
+                          {resRevenueChamp}
+                        </div>
+                      </div>
+                    </div>
+                    <div onClick={() => showRanking("daysBooked")} style={{
+                      background: 'white',
+                      borderRadius: '8px',
+                      padding: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      border: `1px solid ${BRAND_COLORS.accent}33`,
+                      cursor: 'pointer'
+                    }}>
+                      <span style={{ fontSize: '20px' }}>📅</span>
+                      <div>
+                        <div style={{ fontSize: '11px', color: BRAND_COLORS.accent, fontWeight: '600' }}>
+                          BOOKING BOSS
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#64748b' }}>
+                          {bookingBoss}
+                        </div>
+                      </div>
+                    </div>
+                    <div onClick={() => showRanking("occupancyRate")} style={{
+                      background: 'white',
+                      borderRadius: '8px',
+                      padding: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      border: `1px solid ${BRAND_COLORS.success}33`,
+                      cursor: 'pointer'
+                    }}>
+                      <span style={{ fontSize: '20px' }}>🎯</span>
+                      <div>
+                        <div style={{ fontSize: '11px', color: BRAND_COLORS.success, fontWeight: '600' }}>
+                          OCCUPANCY ACE
+                        </div>
+                        <div style={{ fontSize: '10px', color: '#64748b' }}>
+                          {occupancyAce}
+                        </div>
+                      </div>
+                    </div>
+                  </>
                 ) : (
                   <>
                     <div onClick={() => showRanking("arTotal")} style={{
@@ -1717,7 +1965,7 @@ export default function EnhancedMobileDashboard() {
             </div>
 
             <div style={{ display: 'grid', gap: '12px' }}>
-              {insights.map((insight, index) => {
+              {displayedInsights.map((insight, index) => {
                 const Icon = insight.icon;
                 const bgColor = insight.type === 'success' ? '#f0f9ff' : 
                                insight.type === 'warning' ? '#fffbeb' : '#f8fafc';
@@ -1759,6 +2007,9 @@ export default function EnhancedMobileDashboard() {
               const isArKing = p.name === arKing;
               const isCurrentChamp = p.name === currentChamp;
               const isOverdueAlert = p.name === overdueAlert;
+              const isResRevenueChamp = p.name === resRevenueChamp;
+              const isBookingBoss = p.name === bookingBoss;
+              const isOccupancyAce = p.name === occupancyAce;
               
               return (
                 <div
@@ -1866,6 +2117,36 @@ export default function EnhancedMobileDashboard() {
                           boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)'
                         }}>
                           <span style={{ fontSize: '16px' }}>⚡</span>
+                        </div>
+                      )}
+                      {reportType === "res" && isResRevenueChamp && (
+                        <div style={{
+                          background: `linear-gradient(135deg, ${BRAND_COLORS.warning}, #f59e0b)`,
+                          borderRadius: '12px',
+                          padding: '4px 6px',
+                          boxShadow: '0 2px 8px rgba(245,158,11,0.3)'
+                        }}>
+                          <span style={{ fontSize: '16px' }}>👑</span>
+                        </div>
+                      )}
+                      {reportType === "res" && isBookingBoss && (
+                        <div style={{
+                          background: `linear-gradient(135deg, ${BRAND_COLORS.accent}, #0ea5e9)`,
+                          borderRadius: '12px',
+                          padding: '4px 6px',
+                          boxShadow: '0 2px 8px rgba(14,165,233,0.3)'
+                        }}>
+                          <span style={{ fontSize: '16px' }}>📅</span>
+                        </div>
+                      )}
+                      {reportType === "res" && isOccupancyAce && (
+                        <div style={{
+                          background: `linear-gradient(135deg, ${BRAND_COLORS.success}, #22c55e)`,
+                          borderRadius: '12px',
+                          padding: '4px 6px',
+                          boxShadow: '0 2px 8px rgba(34,197,94,0.3)'
+                        }}>
+                          <span style={{ fontSize: '16px' }}>🎯</span>
                         </div>
                       )}
                       {reportType === "ar" && isArKing && (
@@ -2055,6 +2336,61 @@ export default function EnhancedMobileDashboard() {
                         </span>
                       </div>
                     </div>
+                  ) : reportType === "res" ? (
+                    <div style={{ display: 'grid', gap: '6px' }}>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        padding: '6px 10px',
+                        background: `${BRAND_COLORS.primary}08`,
+                        borderRadius: '6px',
+                        border: `1px solid ${BRAND_COLORS.primary}20`
+                      }}>
+                        <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '500' }}>Occupancy</span>
+                        <span style={{
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          color: BRAND_COLORS.primary
+                        }}>
+                          {p.occupancyRate || 0}%
+                        </span>
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        padding: '6px 10px',
+                        background: `${BRAND_COLORS.success}08`,
+                        borderRadius: '6px',
+                        border: `1px solid ${BRAND_COLORS.success}20`
+                      }}>
+                        <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '500' }}>Revenue</span>
+                        <span style={{
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          color: BRAND_COLORS.success
+                        }}>
+                          {formatCompactCurrency(p.revenue || 0)}
+                        </span>
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        padding: '10px',
+                        background: `linear-gradient(135deg, ${BRAND_COLORS.accent}10, ${BRAND_COLORS.primary}05)`,
+                        borderRadius: '8px',
+                        border: `2px solid ${BRAND_COLORS.accent}30`,
+                        boxShadow: `0 4px 12px ${BRAND_COLORS.accent}20`
+                      }}>
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: BRAND_COLORS.accent }}>Days Booked</span>
+                        <span style={{
+                          fontSize: '14px',
+                          fontWeight: '800',
+                          color: BRAND_COLORS.accent
+                        }}>
+                          {p.daysBooked || 0}
+                        </span>
+                      </div>
+                    </div>
                   ) : (
                     <div style={{ display: 'grid', gap: '6px' }}>
                       <div style={{
@@ -2133,7 +2469,7 @@ export default function EnhancedMobileDashboard() {
                 color: BRAND_COLORS.accent
               }}
             >
-              Company Total {reportType === "pl" ? "Net Income" : reportType === "cf" ? "Net Cash" : "A/R"}
+              Company Total {reportType === "pl" ? "Net Income" : reportType === "cf" ? "Net Cash" : reportType === "res" ? "Revenue" : "A/R"}
             </span>
             <div
               style={{
@@ -2236,7 +2572,7 @@ export default function EnhancedMobileDashboard() {
             color: 'white'
           }}>
             <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>
-              {selectedProperty || "Company Total"} - {reportType === "pl" ? "P&L Statement" : reportType === "cf" ? "Cash Flow Statement" : "A/R Aging"}
+              {selectedProperty || "Company Total"} - {reportType === "pl" ? "P&L Statement" : reportType === "cf" ? "Cash Flow Statement" : reportType === "res" ? "Reservations" : "A/R Aging"}
             </h2>
             <p style={{ fontSize: '14px', opacity: 0.9 }}>
               {reportType === "ar" ? "As of Today" : `${getMonthName(month)} ${year}`}
@@ -2582,6 +2918,31 @@ export default function EnhancedMobileDashboard() {
               Net Cash Flow: {formatCurrency(cfTotals.net)}
             </div>
               </>
+            ) : reportType === "res" ? (
+              <div style={{ display: 'grid', gap: '12px' }}>
+                {reservations.map((r) => (
+                  <div
+                    key={r.id}
+                    onClick={() => { setSelectedReservation(r); setView('detail'); }}
+                    style={{
+                      background: 'white',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      border: `1px solid ${BRAND_COLORS.gray[200]}`,
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontWeight: '600' }}>
+                      <span>{r.guest}</span>
+                      <span style={{ color: BRAND_COLORS.success }}>{formatCurrency(r.revenue)}</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>
+                      {r.checkin} - {r.checkout} ({r.nights} nights)
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
               <div style={{ display: 'grid', gap: '12px' }}>
                 <div onClick={() => showARTransactions('current')} style={{ background: `${BRAND_COLORS.success}20`, borderRadius: '8px', padding: '16px', cursor: 'pointer' }}>
@@ -2629,7 +2990,7 @@ export default function EnhancedMobileDashboard() {
             }}
           >
             <ChevronLeft size={20} style={{ marginRight: '4px' }} />
-            Back to {reportType === "pl" ? "P&L" : reportType === "cf" ? "Cash Flow" : "A/R"}
+            Back to {reportType === "pl" ? "P&L" : reportType === "cf" ? "Cash Flow" : reportType === "res" ? "Reservations" : "A/R"}
           </button>
 
           {reportType === "ar" ? (
@@ -2687,6 +3048,29 @@ export default function EnhancedMobileDashboard() {
                 }}
               >
                 Total Outstanding: {formatCurrency(filteredARTotal)}
+              </div>
+            </>
+          ) : reportType === "res" ? (
+            <>
+              <div style={{
+                background: `linear-gradient(135deg, ${BRAND_COLORS.accent}, ${BRAND_COLORS.secondary})`,
+                borderRadius: '12px',
+                padding: '20px',
+                marginBottom: '24px',
+                color: 'white'
+              }}>
+                <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px' }}>
+                  {selectedReservation?.guest}
+                </h2>
+                <p style={{ fontSize: '14px', opacity: 0.9 }}>
+                  {selectedReservation?.property}
+                </p>
+              </div>
+              <div style={{ background: 'white', borderRadius: '8px', padding: '16px', border: `1px solid ${BRAND_COLORS.gray[200]}` }}>
+                <div style={{ marginBottom: '8px' }}><strong>Check-in:</strong> {selectedReservation?.checkin}</div>
+                <div style={{ marginBottom: '8px' }}><strong>Check-out:</strong> {selectedReservation?.checkout}</div>
+                <div style={{ marginBottom: '8px' }}><strong>Nights:</strong> {selectedReservation?.nights}</div>
+                <div><strong>Revenue:</strong> {formatCurrency(selectedReservation?.revenue || 0)}</div>
               </div>
             </>
           ) : (
