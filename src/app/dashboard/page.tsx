@@ -931,8 +931,10 @@ const COLORS = [
 
 export default function MobileResponsiveFinancialsPage() {
   const [activeTab, setActiveTab] = useState("p&l")
-  const [selectedMonth, setSelectedMonth] = useState("May 2025")
-  const [timePeriod, setTimePeriod] = useState("Trailing 12")
+  const now = new Date()
+  const currentMonthYear = now.toLocaleString("en-US", { month: "long", year: "numeric" })
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthYear)
+  const [timePeriod, setTimePeriod] = useState("Monthly")
   const [viewMode, setViewMode] = useState("by-property") // Default to by-customer
   const [notification, setNotification] = useState({ show: false, message: "", type: "info" })
   const [timePeriodDropdownOpen, setTimePeriodDropdownOpen] = useState(false)

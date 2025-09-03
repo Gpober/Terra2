@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import { getCurrentMonthRange } from '@/lib/utils';
 import { 
   Calendar, Download, RefreshCw, Plus, X, ChevronDown, ChevronRight, 
   ArrowUp, ArrowDown, TrendingUp, DollarSign, PieChart, BarChart3, 
@@ -155,8 +156,9 @@ export default function StatementsPage() {
   const [selectedProperty, setSelectedProperty] = useState('All Properties');
   const [selectedStatus, setSelectedStatus] = useState('All Status');
   const [searchTerm, setSearchTerm] = useState('');
-  const [startDate, setStartDate] = useState('2025-01-01');
-  const [endDate, setEndDate] = useState('2025-06-30');
+  const { start: defaultStart, end: defaultEnd } = getCurrentMonthRange();
+  const [startDate, setStartDate] = useState(defaultStart);
+  const [endDate, setEndDate] = useState(defaultEnd);
   const [useTimeframe, setUseTimeframe] = useState(false);
   const [ownerDropdownOpen, setOwnerDropdownOpen] = useState(false);
   const [propertyDropdownOpen, setPropertyDropdownOpen] = useState(false);
