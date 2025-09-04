@@ -2,6 +2,7 @@
 
 import React from "react"
 import { useState, useEffect } from "react"
+import { getCurrentMonthRange } from "@/lib/utils"
 import { RefreshCw, ChevronDown, ChevronRight, X, Download } from "lucide-react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
@@ -129,8 +130,11 @@ const yearsList = Array.from({ length: 10 }, (_, i) => (new Date().getFullYear()
 
 export default function CashFlowPage() {
   // All state variables
-  const [selectedMonth, setSelectedMonth] = useState<string>("June")
-  const [selectedYear, setSelectedYear] = useState<string>("2024")
+  const now = new Date()
+  const currentMonthName = now.toLocaleString("en-US", { month: "long" })
+  const currentYear = now.getFullYear().toString()
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthName)
+  const [selectedYear, setSelectedYear] = useState<string>(currentYear)
   const [timePeriod, setTimePeriod] = useState<TimePeriod>("Monthly")
   const [selectedProperty, setSelectedProperty] = useState("All Properties")
   const [selectedBankAccount, setSelectedBankAccount] = useState("All Bank Accounts")
@@ -640,8 +644,9 @@ export default function CashFlowPage() {
     let endDate: string
 
     if (timePeriod === "Custom") {
-      startDate = customStartDate || "2024-01-01"
-      endDate = customEndDate || "2024-12-31"
+      const { start, end } = getCurrentMonthRange()
+      startDate = customStartDate || start
+      endDate = customEndDate || end
     } else if (timePeriod === "YTD") {
       const monthIndex = monthsList.indexOf(selectedMonth)
       const year = Number.parseInt(selectedYear)

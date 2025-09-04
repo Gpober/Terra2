@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useState, useEffect, useMemo, useRef } from "react";
+import { getCurrentMonthRange } from "@/lib/utils";
 import Link from "next/link";
 import {
   DollarSign,
@@ -144,10 +145,13 @@ const classifyCashFlowTransaction = (accountType) => {
 
 export default function FinancialOverviewPage() {
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState("June");
-  const [selectedYear, setSelectedYear] = useState("2024");
+  const now = new Date();
+  const currentMonthName = now.toLocaleString("en-US", { month: "long" });
+  const currentYear = now.getFullYear().toString();
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthName);
+  const [selectedYear, setSelectedYear] = useState(currentYear);
   type TimePeriod = "Monthly" | "Quarterly" | "YTD" | "Trailing 12" | "Custom";
-  const [timePeriod, setTimePeriod] = useState<TimePeriod>("YTD");
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>("Monthly");
   const [timePeriodDropdownOpen, setTimePeriodDropdownOpen] = useState(false);
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
   const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
@@ -256,8 +260,9 @@ export default function FinancialOverviewPage() {
     let endDate: string;
 
     if (timePeriod === "Custom") {
-      startDate = customStartDate || "2025-01-01";
-      endDate = customEndDate || "2025-06-30";
+      const { start, end } = getCurrentMonthRange();
+      startDate = customStartDate || start;
+      endDate = customEndDate || end;
     } else if (timePeriod === "YTD") {
       const monthIndex = monthsList.indexOf(selectedMonth);
       const year = Number.parseInt(selectedYear);

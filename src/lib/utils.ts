@@ -77,3 +77,17 @@ export function debounce<T extends (...args: any[]) => void>(
 export function truncate(text: string, length = 50): string {
   return text.length > length ? `${text.substring(0, length)}...` : text;
 }
+
+/**
+ * Returns the start and end dates for the current month
+ * @returns Object with start and end in YYYY-MM-DD format
+ */
+export function getCurrentMonthRange(): { start: string; end: string } {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    start: start.toISOString().split("T")[0],
+    end: end.toISOString().split("T")[0],
+  };
+}

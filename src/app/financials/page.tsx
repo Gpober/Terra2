@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useState, useEffect, useRef } from "react";
+import { getCurrentMonthRange } from "@/lib/utils";
 import {
   Download,
   RefreshCw,
@@ -206,9 +207,12 @@ const formatDateDisplay = (dateString: string) => {
 };
 
 export default function FinancialsPage() {
-  const [selectedMonth, setSelectedMonth] = useState<string>("June");
-  const [selectedYear, setSelectedYear] = useState<string>("2025");
-  const [timePeriod, setTimePeriod] = useState<TimePeriod>("YTD");
+  const now = new Date();
+  const currentMonthName = now.toLocaleString("en-US", { month: "long" });
+  const currentYear = now.getFullYear().toString();
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthName);
+  const [selectedYear, setSelectedYear] = useState<string>(currentYear);
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>("Monthly");
   const [viewMode, setViewMode] = useState<ViewMode>("Total");
   const [notification, setNotification] = useState<NotificationState>({
     show: false,
@@ -334,8 +338,9 @@ export default function FinancialsPage() {
     let endDate: string;
 
     if (timePeriod === "Custom") {
-      startDate = customStartDate || "2025-01-01";
-      endDate = customEndDate || "2025-06-30";
+      const { start, end } = getCurrentMonthRange();
+      startDate = customStartDate || start;
+      endDate = customEndDate || end;
     } else if (timePeriod === "YTD") {
       const monthIndex = monthsList.indexOf(selectedMonth);
       const year = Number.parseInt(selectedYear);

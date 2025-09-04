@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
+import { getCurrentMonthRange } from "@/lib/utils"
 import { RefreshCw, X } from "lucide-react"
 import { supabase } from "@/lib/supabaseClient"
 import { PageHeader } from "@/components/PageHeader"
@@ -78,8 +79,11 @@ const liabilityTypeOrder = ["Accounts payable (A/P)", "Credit Card", "Other Curr
 
 export default function BalanceSheetPage() {
   // State variables
-  const [selectedMonth, setSelectedMonth] = useState<string>("December")
-  const [selectedYear, setSelectedYear] = useState<string>("2023")
+  const now = new Date()
+  const currentMonthName = now.toLocaleString("en-US", { month: "long" })
+  const currentYear = now.getFullYear().toString()
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthName)
+  const [selectedYear, setSelectedYear] = useState<string>(currentYear)
   const [timePeriod, setTimePeriod] = useState<TimePeriod>("Monthly")
   const [selectedProperty, setSelectedProperty] = useState("All Customers")
   const [customStartDate, setCustomStartDate] = useState("")
@@ -254,8 +258,9 @@ export default function BalanceSheetPage() {
     let endDate: string
 
     if (timePeriod === "Custom") {
-      startDate = customStartDate || "2024-01-01"
-      endDate = customEndDate || "2024-12-31"
+      const { start, end } = getCurrentMonthRange()
+      startDate = customStartDate || start
+      endDate = customEndDate || end
     } else if (timePeriod === "YTD") {
       startDate = `${now.getFullYear()}-01-01`
       endDate = now.toISOString().split("T")[0]
@@ -289,7 +294,8 @@ export default function BalanceSheetPage() {
     const now = new Date()
 
     if (timePeriod === "Custom") {
-      return customStartDate || "2024-01-01"
+      const { start } = getCurrentMonthRange()
+      return customStartDate || start
     } else if (timePeriod === "YTD") {
       return `${now.getFullYear()}-01-01`
     } else if (timePeriod === "Monthly") {
