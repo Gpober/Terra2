@@ -41,6 +41,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
 import { supabase } from "@/lib/supabaseClient";
+import GenerateStatementsButton from "./portfolio/components/GenerateStatementsButton";
 
 // I AM CFO Brand Colors
 const BRAND_COLORS = {
@@ -193,6 +194,8 @@ export default function FinancialOverviewPage() {
   const [loadingProperty, setLoadingProperty] = useState(false);
   const [trendError, setTrendError] = useState<string | null>(null);
   const [propertyError, setPropertyError] = useState<string | null>(null);
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const [selectedProperties, setSelectedProperties] = useState<Set<string>>(
     new Set(["All Properties"]),
   );
@@ -1271,10 +1274,13 @@ const processCashFlowTransactions = (transactions: any[]) => {
             Last updated: {lastUpdated.toLocaleString()}
           </p>
         )}
-      </PageHeader>
+        </PageHeader>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <GenerateStatementsButton defaultMonth={defaultMonth} />
+        </div>
 
-      {/* Filters */}
-      <div className="bg-white border-b">
+        {/* Filters */}
+        <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-wrap items-center justify-center gap-4 w-full">
             {/* Time Period Dropdown */}
