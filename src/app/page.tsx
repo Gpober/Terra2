@@ -41,6 +41,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { supabase } from "@/lib/supabaseClient";
 
 // I AM CFO Brand Colors
@@ -1400,32 +1401,14 @@ const processCashFlowTransactions = (transactions: any[]) => {
 
             {/* Custom Date Range */}
             {timePeriod === "Custom" && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-500 focus:outline-none focus:ring-2 transition-all"
-                  style={
-                    {
-                      "--tw-ring-color": BRAND_COLORS.primary + "33",
-                    } as React.CSSProperties
-                  }
-                />
-                <span className="text-gray-500">to</span>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-500 focus:outline-none focus:ring-2 transition-all"
-                  style={
-                    {
-                      "--tw-ring-color": BRAND_COLORS.primary + "33",
-                    } as React.CSSProperties
-                  }
-                />
-              </div>
-            )}
+              <DateRangePicker
+                value={{ start: customStartDate, end: customEndDate }}
+                onChange={(range) => {
+                  setCustomStartDate(range.start || "");
+                  setCustomEndDate(range.end || "");
+                }}
+              />
+              )}
           </div>
         </div>
       </div>
