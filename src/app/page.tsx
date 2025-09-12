@@ -1833,6 +1833,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                             ))}
                           </Pie>
                           <Tooltip content={<PropertyTooltip />} />
+                          <Legend />
                         </RechartsPieChart>
                       ) : (
                         <BarChart data={propertyChartData}>
@@ -1842,7 +1843,11 @@ const processCashFlowTransactions = (transactions: any[]) => {
                           <Tooltip
                             formatter={(value) => formatCurrency(value as number)}
                           />
-                          <Bar dataKey="value">
+                          <Legend />
+                          <Bar
+                            dataKey="value"
+                            name={metricLabels[propertyChartMetric]}
+                          >
                             {propertyChartData.map((entry, index) => (
                               <Cell
                                 key={`bar-cell-${index}`}
