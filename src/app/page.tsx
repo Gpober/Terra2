@@ -1633,13 +1633,15 @@ const processCashFlowTransactions = (transactions: any[]) => {
                       )}
                     </div>
                     <Button
-                      className={`h-8 w-8 p-0 ${chartType === "line" ? "" : "bg-white text-gray-700 border border-gray-200"}`}
+                      variant={chartType === "line" ? "default" : "outline"}
+                      className="h-8 w-8 p-0"
                       onClick={() => setChartType("line")}
                     >
                       <TrendingUp className="h-4 w-4" />
                     </Button>
                     <Button
-                      className={`h-8 w-8 p-0 ${chartType === "bar" ? "" : "bg-white text-gray-700 border border-gray-200"}`}
+                      variant={chartType === "bar" ? "default" : "outline"}
+                      className="h-8 w-8 p-0"
                       onClick={() => setChartType("bar")}
                     >
                       <BarChart3 className="h-4 w-4" />
@@ -1748,11 +1750,10 @@ const processCashFlowTransactions = (transactions: any[]) => {
                       {metricOptions.map((m) => (
                         <Button
                           key={m.key}
-                          className={`h-8 px-2 text-xs ${
-                            propertyChartMetric === m.key
-                              ? ""
-                              : "bg-white text-gray-700 border border-gray-200"
-                          }`}
+                          variant={
+                            propertyChartMetric === m.key ? "default" : "outline"
+                          }
+                          className="h-8 px-2 text-xs"
                           onClick={() => setPropertyChartMetric(m.key)}
                         >
                           {m.label}
@@ -1761,21 +1762,19 @@ const processCashFlowTransactions = (transactions: any[]) => {
                     </div>
                     <div className="flex gap-1">
                       <Button
-                        className={`h-8 w-8 p-0 ${
-                          propertyChartType === "pie"
-                            ? ""
-                            : "bg-white text-gray-700 border border-gray-200"
-                        }`}
+                        variant={
+                          propertyChartType === "pie" ? "default" : "outline"
+                        }
+                        className="h-8 w-8 p-0"
                         onClick={() => setPropertyChartType("pie")}
                       >
                         <PieChart className="h-4 w-4" />
                       </Button>
                       <Button
-                        className={`h-8 w-8 p-0 ${
-                          propertyChartType === "bar"
-                            ? ""
-                            : "bg-white text-gray-700 border border-gray-200"
-                        }`}
+                        variant={
+                          propertyChartType === "bar" ? "default" : "outline"
+                        }
+                        className="h-8 w-8 p-0"
                         onClick={() => setPropertyChartType("bar")}
                       >
                         <BarChart3 className="h-4 w-4" />
