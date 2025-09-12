@@ -1636,29 +1636,21 @@ const processCashFlowTransactions = (transactions: any[]) => {
                       className={`h-8 w-8 p-0 ${
                         chartType === "line"
                           ? ""
-                          : "bg-white border border-gray-200"
+                          : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
                       }`}
                       onClick={() => setChartType("line")}
                     >
-                      <TrendingUp
-                        className={`h-4 w-4 ${
-                          chartType === "line" ? "" : "text-gray-600"
-                        }`}
-                      />
+                      <TrendingUp className="h-4 w-4" />
                     </Button>
                     <Button
                       className={`h-8 w-8 p-0 ${
                         chartType === "bar"
                           ? ""
-                          : "bg-white border border-gray-200"
+                          : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
                       }`}
                       onClick={() => setChartType("bar")}
                     >
-                      <BarChart3
-                        className={`h-4 w-4 ${
-                          chartType === "bar" ? "" : "text-gray-600"
-                        }`}
-                      />
+                      <BarChart3 className="h-4 w-4" />
                     </Button>
                   </div>
                 </CardHeader>
@@ -1785,29 +1777,21 @@ const processCashFlowTransactions = (transactions: any[]) => {
                         className={`h-8 w-8 p-0 ${
                           propertyChartType === "pie"
                             ? ""
-                            : "bg-white border border-gray-200"
+                            : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
                         }`}
                         onClick={() => setPropertyChartType("pie")}
                       >
-                        <PieChart
-                          className={`h-4 w-4 ${
-                            propertyChartType === "pie" ? "" : "text-gray-600"
-                          }`}
-                        />
+                        <PieChart className="h-4 w-4" />
                       </Button>
                       <Button
                         className={`h-8 w-8 p-0 ${
                           propertyChartType === "bar"
                             ? ""
-                            : "bg-white border border-gray-200"
+                            : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
                         }`}
                         onClick={() => setPropertyChartType("bar")}
                       >
-                        <BarChart3
-                          className={`h-4 w-4 ${
-                            propertyChartType === "bar" ? "" : "text-gray-600"
-                          }`}
-                        />
+                        <BarChart3 className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
