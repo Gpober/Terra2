@@ -224,6 +224,7 @@ export default function FinancialsPage() {
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
   const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
   const [selectedProperties, setSelectedProperties] = useState<Set<string>>(new Set());
+  const propertiesInitialized = useRef(false);
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(
@@ -584,17 +585,16 @@ export default function FinancialsPage() {
       const sorted = Array.from(properties).sort();
       setAvailableProperties(sorted);
       setSelectedProperties((prev) => {
-        if (prev.size === 0) {
-          return new Set(sorted);
+        if (!propertiesInitialized.current) {
+          propertiesInitialized.current = true;
+          return prev.size === 0
+            ? new Set(sorted)
+            : new Set(Array.from(prev).filter((p) => sorted.includes(p)));
         }
-
-        const prevArr = Array.from(prev).sort();
-        const isSame =
-          prevArr.length === sorted.length &&
-          prevArr.every((p, i) => p === sorted[i]);
-        if (isSame) return prev;
-
-        const next = new Set(prevArr.filter((p) => sorted.includes(p)));
+        if (prev.size === 0) return prev;
+        const next = new Set(
+          Array.from(prev).filter((p) => sorted.includes(p))
+        );
         return next.size > 0 ? next : new Set(sorted);
       });
 

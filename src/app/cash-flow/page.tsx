@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { getCurrentMonthRange } from "@/lib/utils"
 import { RefreshCw, ChevronDown, ChevronRight, X, Download } from "lucide-react"
 import * as XLSX from "xlsx"
@@ -138,6 +138,7 @@ export default function CashFlowPage() {
   const [selectedYear, setSelectedYear] = useState<string>(currentYear)
   const [timePeriod, setTimePeriod] = useState<TimePeriod>("Monthly")
   const [selectedProperties, setSelectedProperties] = useState<Set<string>>(new Set())
+  const propertiesInitialized = useRef(false)
   const [selectedBankAccount, setSelectedBankAccount] = useState("All Bank Accounts")
   const [viewMode, setViewMode] = useState<ViewMode>("offset")
   const [periodType, setPeriodType] = useState<PeriodType>("monthly")
@@ -742,8 +743,16 @@ export default function CashFlowPage() {
       const sorted = Array.from(properties).sort()
       setAvailableProperties(sorted)
       setSelectedProperties((prev) => {
-        if (prev.size === 0) return new Set(sorted)
-        const next = new Set(Array.from(prev).filter((p) => sorted.includes(p)))
+        if (!propertiesInitialized.current) {
+          propertiesInitialized.current = true
+          return prev.size === 0
+            ? new Set(sorted)
+            : new Set(Array.from(prev).filter((p) => sorted.includes(p)))
+        }
+        if (prev.size === 0) return prev
+        const next = new Set(
+          Array.from(prev).filter((p) => sorted.includes(p))
+        )
         return next.size > 0 ? next : new Set(sorted)
       })
 

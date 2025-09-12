@@ -197,6 +197,7 @@ export default function FinancialOverviewPage() {
   const [trendError, setTrendError] = useState<string | null>(null);
   const [propertyError, setPropertyError] = useState<string | null>(null);
   const [selectedProperties, setSelectedProperties] = useState<Set<string>>(new Set());
+  const propertiesInitialized = useRef(false);
   const [availableProperties, setAvailableProperties] = useState<string[]>([]);
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
@@ -397,8 +398,16 @@ export default function FinancialOverviewPage() {
       const sorted = Array.from(classes).sort();
       setAvailableProperties(sorted);
       setSelectedProperties((prev) => {
-        if (prev.size === 0) return new Set(sorted);
-        const next = new Set(Array.from(prev).filter((p) => sorted.includes(p)));
+        if (!propertiesInitialized.current) {
+          propertiesInitialized.current = true;
+          return prev.size === 0
+            ? new Set(sorted)
+            : new Set(Array.from(prev).filter((p) => sorted.includes(p)));
+        }
+        if (prev.size === 0) return prev;
+        const next = new Set(
+          Array.from(prev).filter((p) => sorted.includes(p))
+        );
         return next.size > 0 ? next : new Set(sorted);
       });
     } catch (err) {

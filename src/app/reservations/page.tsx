@@ -364,6 +364,7 @@ const CalendarTooltip = ({ tooltip }: { tooltip: TooltipState }) => {
 const ReservationsTab: React.FC = () => {
   // State
   const [selectedProperties, setSelectedProperties] = useState<string[]>(['miami-beach', 'downtown-loft', 'suburb-house']);
+  const propertiesInitialized = useRef(false);
   const [currentView, setCurrentView] = useState<ChartMode>('monthly');
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date(2025, 5, 28));
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
@@ -696,8 +697,14 @@ async function connectToAPI() {
       );
       setBackendData({ properties, reservations, kpis });
       setSelectedProperties((prev) => {
-        if (prev.length === 0) return properties.map((p) => p.id);
         const allowed = properties.map((p) => p.id);
+        if (!propertiesInitialized.current) {
+          propertiesInitialized.current = true;
+          return prev.length === 0
+            ? allowed
+            : prev.filter((id) => allowed.includes(id));
+        }
+        if (prev.length === 0) return prev;
         const next = prev.filter((id) => allowed.includes(id));
         return next.length > 0 ? next : allowed;
       });
