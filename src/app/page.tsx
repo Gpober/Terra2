@@ -1088,11 +1088,11 @@ const processCashFlowTransactions = (transactions: any[]) => {
   };
 
   const metricOptions = [
-    { key: "income", label: "Revenue" },
-    { key: "cogs", label: "COGS" },
-    { key: "gp", label: "Gross Profit" },
-    { key: "expenses", label: "Expenses" },
-    { key: "ni", label: "Net Income" },
+    { key: "income", label: "Revenue", icon: TrendingUp },
+    { key: "cogs", label: "COGS", icon: Activity },
+    { key: "gp", label: "Gross Profit", icon: Target },
+    { key: "expenses", label: "Expenses", icon: CreditCard },
+    { key: "ni", label: "Net Income", icon: DollarSign },
   ] as const;
 
   const { startDate: propertyStart, endDate: propertyEnd } =
@@ -1633,13 +1633,21 @@ const processCashFlowTransactions = (transactions: any[]) => {
                       )}
                     </div>
                     <Button
-                      className={`h-8 w-8 p-0 ${chartType === "line" ? "" : "bg-white text-gray-700 border border-gray-200"}`}
+                      className={`h-8 w-8 p-0 ${
+                        chartType === "line"
+                          ? ""
+                          : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
+                      }`}
                       onClick={() => setChartType("line")}
                     >
                       <TrendingUp className="h-4 w-4" />
                     </Button>
                     <Button
-                      className={`h-8 w-8 p-0 ${chartType === "bar" ? "" : "bg-white text-gray-700 border border-gray-200"}`}
+                      className={`h-8 w-8 p-0 ${
+                        chartType === "bar"
+                          ? ""
+                          : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
+                      }`}
                       onClick={() => setChartType("bar")}
                     >
                       <BarChart3 className="h-4 w-4" />
@@ -1748,13 +1756,18 @@ const processCashFlowTransactions = (transactions: any[]) => {
                       {metricOptions.map((m) => (
                         <Button
                           key={m.key}
-                          className={`h-8 px-2 text-xs ${
+                          className={`h-8 px-2 text-xs flex items-center gap-1 ${
                             propertyChartMetric === m.key
                               ? ""
                               : "bg-white text-gray-700 border border-gray-200"
                           }`}
                           onClick={() => setPropertyChartMetric(m.key)}
                         >
+                          <m.icon
+                            className={`h-4 w-4 ${
+                              propertyChartMetric === m.key ? "" : "text-gray-600"
+                            }`}
+                          />
                           {m.label}
                         </Button>
                       ))}
@@ -1764,7 +1777,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                         className={`h-8 w-8 p-0 ${
                           propertyChartType === "pie"
                             ? ""
-                            : "bg-white text-gray-700 border border-gray-200"
+                            : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
                         }`}
                         onClick={() => setPropertyChartType("pie")}
                       >
@@ -1774,7 +1787,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                         className={`h-8 w-8 p-0 ${
                           propertyChartType === "bar"
                             ? ""
-                            : "bg-white text-gray-700 border border-gray-200"
+                            : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
                         }`}
                         onClick={() => setPropertyChartType("bar")}
                       >
