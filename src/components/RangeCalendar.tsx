@@ -198,8 +198,8 @@ export default function RangeCalendar({
       : null;
 
   return (
-    <div className={cn("w-80", className)}>
-      <div className="flex items-center justify-between mb-2">
+    <div className={cn("w-64", className)}>
+      <div className="flex items-center justify-between mb-1">
         <button
           type="button"
           onClick={() => {
@@ -208,7 +208,7 @@ export default function RangeCalendar({
             setFocusedDate(startOfMonth(next));
           }}
           aria-label="Previous month"
-          className="p-2"
+          className="p-1"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -223,19 +223,24 @@ export default function RangeCalendar({
             setFocusedDate(startOfMonth(next));
           }}
           aria-label="Next month"
-          className="p-2"
+          className="p-1"
         >
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>
-      <div className="grid grid-cols-7 text-center text-xs mb-1">
+      <div className="grid grid-cols-7 text-center text-[10px] mb-1">
         {weekLabels.map((d) => (
-          <div key={d} className="h-8 flex items-center justify-center">
+          <div key={d} className="h-6 flex items-center justify-center">
             {d}
           </div>
         ))}
       </div>
-      <div ref={gridRef} role="grid" className="grid grid-cols-7" onMouseLeave={() => setHovered(null)}>
+      <div
+        ref={gridRef}
+        role="grid"
+        className="grid grid-cols-7"
+        onMouseLeave={() => setHovered(null)}
+      >
         {weeks.flat().map((date) => {
           const key = formatKey(date);
           const isCurrentMonth =
@@ -260,7 +265,7 @@ export default function RangeCalendar({
           const isSelected = isStart || isEnd;
 
           const classNames = cn(
-            "relative w-10 h-10 flex items-center justify-center text-sm focus:outline-none",
+            "relative w-8 h-8 flex items-center justify-center text-xs focus:outline-none",
             !isCurrentMonth && "text-gray-400",
             disabled && "text-gray-300 pointer-events-none",
             (inRange || inPreview) && "bg-[#2E86C1]/20",
@@ -307,8 +312,34 @@ export default function RangeCalendar({
           );
         })}
       </div>
-      <div className="text-center mt-2 text-sm" aria-live="polite">
-        {currentMonth.getFullYear()}
+      <div className="flex items-center justify-center mt-1 text-sm">
+        <button
+          type="button"
+          aria-label="Previous year"
+          className="px-2 py-1 rounded hover:bg-gray-100"
+          onClick={() => {
+            const next = addMonths(currentMonth, -12);
+            setCurrentMonth(next);
+            setFocusedDate(startOfMonth(next));
+          }}
+        >
+          {currentMonth.getFullYear() - 1}
+        </button>
+        <div className="mx-2" aria-live="polite">
+          {currentMonth.getFullYear()}
+        </div>
+        <button
+          type="button"
+          aria-label="Next year"
+          className="px-2 py-1 rounded hover:bg-gray-100"
+          onClick={() => {
+            const next = addMonths(currentMonth, 12);
+            setCurrentMonth(next);
+            setFocusedDate(startOfMonth(next));
+          }}
+        >
+          {currentMonth.getFullYear() + 1}
+        </button>
       </div>
     </div>
   );
