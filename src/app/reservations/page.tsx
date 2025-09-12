@@ -695,7 +695,12 @@ async function connectToAPI() {
         now.getFullYear()
       );
       setBackendData({ properties, reservations, kpis });
-      setSelectedProperties(properties.map((p) => p.id));
+      setSelectedProperties((prev) => {
+        if (prev.length === 0) return properties.map((p) => p.id);
+        const allowed = properties.map((p) => p.id);
+        const next = prev.filter((id) => allowed.includes(id));
+        return next.length > 0 ? next : allowed;
+      });
       setIsConnectedToBackend(true);
       showNotification('Connected to live Guesty data!', 'success');
     } catch (err) {

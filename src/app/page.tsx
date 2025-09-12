@@ -396,7 +396,11 @@ export default function FinancialOverviewPage() {
       });
       const sorted = Array.from(classes).sort();
       setAvailableProperties(sorted);
-      setSelectedProperties(new Set(sorted));
+      setSelectedProperties((prev) => {
+        if (prev.size === 0) return new Set(sorted);
+        const next = new Set(Array.from(prev).filter((p) => sorted.includes(p)));
+        return next.size > 0 ? next : new Set(sorted);
+      });
     } catch (err) {
       console.error("Error fetching properties:", err);
     }

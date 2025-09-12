@@ -741,7 +741,11 @@ export default function CashFlowPage() {
 
       const sorted = Array.from(properties).sort()
       setAvailableProperties(sorted)
-      setSelectedProperties(new Set(sorted))
+      setSelectedProperties((prev) => {
+        if (prev.size === 0) return new Set(sorted)
+        const next = new Set(Array.from(prev).filter((p) => sorted.includes(p)))
+        return next.size > 0 ? next : new Set(sorted)
+      })
 
       // ENHANCED: Fetch bank accounts using entry_bank_account field
       const { data: bankData, error: bankError } = await supabase

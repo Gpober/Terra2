@@ -60,7 +60,7 @@ export default function MultiSelect({
   }, [allSelected, selected, options, allLabel, placeholder]);
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root open={open} onOpenChange={setOpen} modal>
       <Popover.Trigger asChild>
         <button
           className={cn(
@@ -72,7 +72,8 @@ export default function MultiSelect({
       </Popover.Trigger>
       <Popover.Content
         align="start"
-        className="p-2 bg-white rounded-md shadow-md border w-64"
+        sideOffset={4}
+        className="z-50 p-2 bg-white rounded-md shadow-md border w-64"
       >
         <div className="flex justify-between items-center px-1 mb-2">
           <button
