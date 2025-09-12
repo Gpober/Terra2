@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabaseClient";
+import { DateRangePicker } from "@/components/DateRangePicker";
 
 // I AM CFO Brand Colors
 const BRAND_COLORS = {
@@ -1528,32 +1529,14 @@ export default function EnhancedMobileDashboard() {
                 </select>
               </div>
               {reportPeriod === "Custom" ? (
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                  <input
-                    type="date"
-                    style={{
-                      flex: 1,
-                      padding: '12px',
-                      border: `2px solid ${BRAND_COLORS.gray[200]}`,
-                      borderRadius: '8px',
-                      fontSize: '16px'
-                    }}
-                    value={customStart}
-                    onChange={(e) => setCustomStart(e.target.value)}
-                  />
-                  <input
-                    type="date"
-                    style={{
-                      flex: 1,
-                      padding: '12px',
-                      border: `2px solid ${BRAND_COLORS.gray[200]}`,
-                      borderRadius: '8px',
-                      fontSize: '16px'
-                    }}
-                    value={customEnd}
-                    onChange={(e) => setCustomEnd(e.target.value)}
-                  />
-                </div>
+                <DateRangePicker
+                  value={{ start: customStart, end: customEnd }}
+                  onChange={(range) => {
+                    setCustomStart(range.start || "");
+                    setCustomEnd(range.end || "");
+                  }}
+                  style={{ marginBottom: '16px' }}
+                />
               ) : (
                 <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
                   <select
