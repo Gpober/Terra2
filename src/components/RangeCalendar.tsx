@@ -261,11 +261,31 @@ export default function RangeCalendar({
           );
           const isSelected = isStart || isEnd;
 
+          const shouldHighlight =
+            inRange ||
+            inPreview ||
+            (isStart && (range.end || previewEnd)) ||
+            isEnd ||
+            isPreviewEnd;
+
+          let rangeClass = "";
+          if (shouldHighlight) {
+            rangeClass =
+              "before:absolute before:z-0 before:content-[''] before:top-0 before:bottom-0 before:bg-[#2E86C1] before:opacity-30";
+            if (isStart && (range.end || previewEnd) && !(isEnd || isPreviewEnd)) {
+              rangeClass += " before:left-1/2 before:right-0";
+            } else if ((isEnd || isPreviewEnd) && !isStart) {
+              rangeClass += " before:left-0 before:right-1/2";
+            } else {
+              rangeClass += " before:left-0 before:right-0";
+            }
+          }
+
           const classNames = cn(
-            "relative w-8 h-8 flex items-center justify-center text-xs focus:outline-none",
+            "relative z-0 w-8 h-8 flex items-center justify-center text-xs focus:outline-none",
             !isCurrentMonth && "text-gray-400",
             disabled && "text-gray-300 pointer-events-none",
-            (inRange || inPreview) && "bg-[#2E86C1]/20",
+            rangeClass,
             isStart &&
               !range.end &&
               !previewEnd &&
@@ -304,7 +324,7 @@ export default function RangeCalendar({
               className={classNames}
               disabled={disabled}
             >
-              {date.getDate()}
+              <span className="relative z-10">{date.getDate()}</span>
             </button>
           );
         })}
