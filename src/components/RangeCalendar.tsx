@@ -261,11 +261,31 @@ export default function RangeCalendar({
           );
           const isSelected = isStart || isEnd;
 
+          const shouldHighlight =
+            inRange ||
+            inPreview ||
+            (isStart && (range.end || previewEnd)) ||
+            isEnd ||
+            isPreviewEnd;
+
+          let rangeClass = "";
+          if (shouldHighlight) {
+            rangeClass =
+              "after:absolute after:content-[''] after:-z-10 after:top-0 after:bottom-0 after:bg-[#2E86C1]/20";
+            if (isStart && (range.end || previewEnd) && !(isEnd || isPreviewEnd)) {
+              rangeClass += " after:left-1/2 after:right-0";
+            } else if ((isEnd || isPreviewEnd) && !isStart) {
+              rangeClass += " after:left-0 after:right-1/2";
+            } else {
+              rangeClass += " after:left-0 after:right-0";
+            }
+          }
+
           const classNames = cn(
             "relative w-8 h-8 flex items-center justify-center text-xs focus:outline-none",
             !isCurrentMonth && "text-gray-400",
             disabled && "text-gray-300 pointer-events-none",
-            (inRange || inPreview) && "bg-[#2E86C1]/20",
+            rangeClass,
             isStart &&
               !range.end &&
               !previewEnd &&
