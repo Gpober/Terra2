@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Calendar as CalendarIcon } from "lucide-react"
-import { format } from "date-fns"
+import { format, parse } from "date-fns"
 import { DateRange } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
@@ -21,8 +21,9 @@ interface DateRangePickerProps
 }
 
 export function DateRangePicker({ value, onChange, className, ...props }: DateRangePickerProps) {
+  const toDate = (s?: string) => (s ? parse(s, "yyyy-MM-dd", new Date()) : undefined)
   const selected: DateRange | undefined = value.start
-    ? { from: new Date(value.start), to: value.end ? new Date(value.end) : undefined }
+    ? { from: toDate(value.start), to: toDate(value.end) }
     : undefined
 
   const handleSelect = (range: DateRange | undefined) => {
@@ -47,11 +48,11 @@ export function DateRangePicker({ value, onChange, className, ...props }: DateRa
             {value.start ? (
               value.end ? (
                 <>
-                  {format(new Date(value.start), "LLL dd, y")} -{" "}
-                  {format(new Date(value.end), "LLL dd, y")}
+                  {format(toDate(value.start)!, "LLL dd, y")} -{" "}
+                  {format(toDate(value.end)!, "LLL dd, y")}
                 </>
               ) : (
-                format(new Date(value.start), "LLL dd, y")
+                format(toDate(value.start)!, "LLL dd, y")
               )
             ) : (
               <span>Pick a date</span>
