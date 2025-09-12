@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useState, useEffect, useRef } from "react";
+import MultiSelect from "@/components/MultiSelect";
 import { getCurrentMonthRange } from "@/lib/utils";
 import {
   Download,
@@ -220,12 +221,9 @@ export default function FinancialsPage() {
     type: "info",
   });
   const [timePeriodDropdownOpen, setTimePeriodDropdownOpen] = useState(false);
-  const [propertyDropdownOpen, setPropertyDropdownOpen] = useState(false);
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
   const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
-  const [selectedProperties, setSelectedProperties] = useState<Set<string>>(
-    new Set(["All Properties"]),
-  );
+  const [selectedProperties, setSelectedProperties] = useState<string[]>([]);
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(
@@ -234,9 +232,7 @@ export default function FinancialsPage() {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [plAccounts, setPlAccounts] = useState<PLAccount[]>([]);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [availableProperties, setAvailableProperties] = useState<string[]>([
-    "All Properties",
-  ]);
+  const [availableProperties, setAvailableProperties] = useState<string[]>([]);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [transactionModalTitle, setTransactionModalTitle] = useState("");
   const [modalTransactionDetails, setModalTransactionDetails] = useState<
@@ -250,7 +246,6 @@ export default function FinancialsPage() {
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
 
   // Refs for click outside functionality
-  const propertyDropdownRef = useRef<HTMLDivElement>(null);
   const timePeriodDropdownRef = useRef<HTMLDivElement>(null);
   const monthDropdownRef = useRef<HTMLDivElement>(null);
   const yearDropdownRef = useRef<HTMLDivElement>(null);
@@ -294,12 +289,6 @@ export default function FinancialsPage() {
   // Click outside handler
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        propertyDropdownRef.current &&
-        !propertyDropdownRef.current.contains(event.target as Node)
-      ) {
-        setPropertyDropdownOpen(false);
-      }
       if (
         timePeriodDropdownRef.current &&
         !timePeriodDropdownRef.current.contains(event.target as Node)
@@ -496,12 +485,17 @@ export default function FinancialsPage() {
 
     try {
       const { startDate, endDate } = calculateDateRange();
-      const selectedProperty =
-        Array.from(selectedProperties)[0] || "All Properties";
+      const propertyFilter =
+        selectedProperties.length > 0 &&
+        selectedProperties.length < availableProperties.length
+          ? selectedProperties
+          : null;
 
       smartLog(`🔍 TIMEZONE-INDEPENDENT P&L DATA FETCH`);
       smartLog(`📅 Period: ${startDate} to ${endDate}`);
-      smartLog(`🏢 Property Filter: "${selectedProperty}"`);
+      smartLog(
+        `🏢 Property Filter: "${propertyFilter ? propertyFilter.join(", ") : "All Properties"}"`,
+      );
 
       // ENHANCED QUERY: Use the new database structure with better field selection
       let query = supabase
@@ -532,8 +526,8 @@ export default function FinancialsPage() {
         .order("date", { ascending: true });
 
       // Apply property filter
-      if (selectedProperty !== "All Properties") {
-        query = query.eq("class", selectedProperty);
+      if (propertyFilter) {
+        query = query.in("class", propertyFilter);
       }
 
       const { data: allTransactions, error } = await query;
@@ -581,10 +575,9 @@ export default function FinancialsPage() {
           properties.add(tx.class.trim());
         }
       });
-      setAvailableProperties([
-        "All Properties",
-        ...Array.from(properties).sort(),
-      ]);
+      const propertyList = Array.from(properties).sort();
+      setAvailableProperties(propertyList);
+      setSelectedProperties(propertyList);
 
       // Process transactions using ENHANCED logic
       const processedAccounts = await processPLTransactionsEnhanced(
@@ -1231,7 +1224,7 @@ export default function FinancialsPage() {
     if (viewMode === "Total") {
       return [];
     } else if (viewMode === "Property") {
-      return availableProperties.filter((p) => p !== "All Properties");
+      return availableProperties;
     } else if (viewMode === "Detail") {
       // For Detail view, show months in the date range using timezone-independent method
       const { startDate, endDate } = calculateDateRange();
@@ -1672,57 +1665,12 @@ export default function FinancialsPage() {
 
 
             {/* Property Filter */}
-            <div className="relative" ref={propertyDropdownRef}>
-              <button
-                onClick={() => setPropertyDropdownOpen(!propertyDropdownOpen)}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
-                style={
-                  {
-                    "--tw-ring-color": BRAND_COLORS.primary + "33",
-                  } as React.CSSProperties
-                }
-              >
-                Properties: {Array.from(selectedProperties).join(", ")}
-                <ChevronDown className="w-4 h-4 ml-2" />
-              </button>
-
-              {propertyDropdownOpen && (
-                <div className="absolute z-10 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                  {availableProperties.map((property) => (
-                    <label
-                      key={property}
-                      className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedProperties.has(property)}
-                        onChange={(e) => {
-                          const newSelected = new Set(selectedProperties);
-                          if (e.target.checked) {
-                            if (property === "All Properties") {
-                              newSelected.clear();
-                              newSelected.add("All Properties");
-                            } else {
-                              newSelected.delete("All Properties");
-                              newSelected.add(property);
-                            }
-                          } else {
-                            newSelected.delete(property);
-                            if (newSelected.size === 0) {
-                              newSelected.add("All Properties");
-                            }
-                          }
-                          setSelectedProperties(newSelected);
-                        }}
-                        className="mr-3 rounded"
-                        style={{ accentColor: BRAND_COLORS.primary }}
-                      />
-                      {property}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
+            <MultiSelect
+              options={availableProperties.map((p) => ({ value: p, label: p }))}
+              selected={selectedProperties}
+              onChange={setSelectedProperties}
+              label="properties"
+            />
 
             {/* View Mode Toggle */}
             <div className="flex items-center border border-gray-300 rounded-lg">

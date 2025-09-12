@@ -4,49 +4,57 @@ import * as React from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "@/lib/utils";
 
-type ClassMultiSelectProps = {
-  options: string[];
-  selected: Set<string>;
-  onChange: (next: Set<string>) => void;
+type Option = {
+  value: string;
+  label: string;
 };
 
-export default function ClassMultiSelect({ options, selected, onChange }: ClassMultiSelectProps) {
+type MultiSelectProps = {
+  options: Option[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  label: string; // plural form, e.g. "classes" or "properties"
+};
+
+export default function MultiSelect({
+  options,
+  selected,
+  onChange,
+  label,
+}: MultiSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
 
-  const allSelected = options.length > 0 && selected.size === options.length;
+  const allSelected = options.length > 0 && selected.length === options.length;
 
-  const toggle = (opt: string) => {
-    const next = new Set(selected);
-    if (next.has(opt)) {
-      next.delete(opt);
-    } else {
-      next.add(opt);
-    }
+  const toggle = (val: string) => {
+    const next = selected.includes(val)
+      ? selected.filter((v) => v !== val)
+      : [...selected, val];
     onChange(next);
   };
 
   const selectAll = () => {
-    onChange(new Set(options));
+    onChange(options.map((o) => o.value));
   };
 
   const clearAll = () => {
-    onChange(new Set());
+    onChange([]);
   };
 
   const filtered = options.filter((opt) =>
-    opt.toLowerCase().includes(search.toLowerCase()),
+    opt.label.toLowerCase().includes(search.toLowerCase()),
   );
 
-  const firstSelected = options.find((opt) => selected.has(opt));
+  const firstSelected = options.find((opt) => selected.includes(opt.value));
 
-  const label = allSelected
-    ? "All classes"
-    : selected.size === 0
-    ? "Select classes"
-    : selected.size === 1
-    ? firstSelected
-    : `${firstSelected} +${selected.size - 1} more`;
+  const labelText = allSelected
+    ? `All ${label}`
+    : selected.length === 0
+    ? `Select ${label}`
+    : selected.length === 1
+    ? firstSelected?.label
+    : `${firstSelected?.label} +${selected.length - 1} more`;
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -56,7 +64,7 @@ export default function ClassMultiSelect({ options, selected, onChange }: ClassM
             "w-64 px-3 py-2 text-sm border border-gray-300 rounded-md bg-white text-left",
           )}
         >
-          {label}
+          {labelText}
         </button>
       </Popover.Trigger>
       <Popover.Content
@@ -74,32 +82,32 @@ export default function ClassMultiSelect({ options, selected, onChange }: ClassM
           <button
             className="text-xs text-blue-600 underline disabled:opacity-50"
             onClick={clearAll}
-            disabled={selected.size === 0}
+            disabled={selected.length === 0}
           >
             Clear all
           </button>
         </div>
         <input
           type="text"
-          placeholder="Filter classes"
+          placeholder={`Filter ${label}`}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="mb-2 w-full px-2 py-1 border rounded text-sm"
         />
         <div className="max-h-64 overflow-y-auto flex flex-col gap-1 px-1">
           {filtered.map((opt) => (
-            <label key={opt} className="flex items-center space-x-2">
+            <label key={opt.value} className="flex items-center space-x-2">
               <input
                 type="checkbox"
                 className="h-4 w-4"
-                checked={selected.has(opt)}
-                onChange={() => toggle(opt)}
+                checked={selected.includes(opt.value)}
+                onChange={() => toggle(opt.value)}
               />
-              <span className="text-sm">{opt}</span>
+              <span className="text-sm">{opt.label}</span>
             </label>
           ))}
           {filtered.length === 0 && (
-            <span className="text-sm text-gray-500 px-1">No classes found</span>
+            <span className="text-sm text-gray-500 px-1">No {label} found</span>
           )}
         </div>
       </Popover.Content>

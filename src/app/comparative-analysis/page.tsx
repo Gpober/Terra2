@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import DateRangePicker from "@/components/DateRangePicker";
-import ClassMultiSelect from "@/components/ClassMultiSelect";
+import MultiSelect from "@/components/MultiSelect";
 import { 
   Download, 
   RefreshCw, 
@@ -61,7 +61,7 @@ export default function EnhancedComparativeAnalysis() {
   const [endA, setEndA] = useState("");
   const [startB, setStartB] = useState("");
   const [endB, setEndB] = useState("");
-  const [selectedClasses, setSelectedClasses] = useState<Set<string>>(new Set());
+  const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
   const [classes, setClasses] = useState<string[]>([]);
   const [dataA, setDataA] = useState<KPIs | null>(null);
   const [dataB, setDataB] = useState<KPIs | null>(null);
@@ -334,7 +334,7 @@ export default function EnhancedComparativeAnalysis() {
     setError(null);
     try {
       const classFilter =
-        selectedClasses.size > 0 ? Array.from(selectedClasses) : undefined;
+        selectedClasses.length > 0 ? selectedClasses : undefined;
       const [linesA, linesB] = await Promise.all([
         fetchLines(startA, endA, classFilter),
         fetchLines(startB, endB, classFilter),
@@ -456,10 +456,11 @@ export default function EnhancedComparativeAnalysis() {
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Comparative Analysis</h1>
 
         <div className="flex flex-wrap items-end gap-4">
-          <ClassMultiSelect
-            options={classes}
+          <MultiSelect
+            options={classes.map((c) => ({ value: c, label: c }))}
             selected={selectedClasses}
             onChange={setSelectedClasses}
+            label="classes"
           />
 
           <div className="flex flex-col">
