@@ -86,26 +86,23 @@ export default function RangeCalendar({
   className,
 }: RangeCalendarProps) {
   const isControlled = value !== undefined;
-  const [internal, setInternal] = React.useState<RangeValue>(
-    defaultValue ?? { start: null, end: null }
+  const [range, setRange] = React.useState<RangeValue>(
+    value ?? defaultValue ?? { start: null, end: null }
   );
-  const range = isControlled ? value! : internal;
+
+  React.useEffect(() => {
+    if (isControlled) {
+      setRange(value ?? { start: null, end: null });
+    }
+  }, [isControlled, value]);
 
   const today = startOfDay(new Date());
   const [currentMonth, setCurrentMonth] = React.useState<Date>(
     startOfMonth(initialMonth ?? today)
   );
   const [hovered, setHovered] = React.useState<Date | null>(null);
-  const [focusedDate, setFocusedDate] = React.useState<Date>(
-    range.start ?? today
-  );
+  const [focusedDate, setFocusedDate] = React.useState<Date>(range.start ?? today);
   const gridRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    if (isControlled) {
-      setInternal(value!);
-    }
-  }, [isControlled, value]);
 
   React.useEffect(() => {
     const selector = `[data-date='${formatKey(focusedDate)}']`;
@@ -113,8 +110,8 @@ export default function RangeCalendar({
     el?.focus();
   }, [focusedDate, currentMonth]);
 
-  const setRange = (next: RangeValue, final: boolean): void => {
-    if (!isControlled) setInternal(next);
+  const commitRange = (next: RangeValue, final: boolean): void => {
+    setRange(next);
     if (final) onChange?.(next);
   };
 
@@ -128,13 +125,13 @@ export default function RangeCalendar({
   const handleDayClick = (date: Date): void => {
     if (isDateDisabled(date)) return;
     if (!range.start || (range.start && range.end)) {
-      setRange({ start: date, end: null }, false);
+      commitRange({ start: date, end: null }, false);
     } else if (range.start && !range.end) {
       if (date < range.start) {
-        setRange({ start: date, end: null }, false);
+        commitRange({ start: date, end: null }, false);
       } else {
         const next = { start: range.start, end: date };
-        setRange(next, true);
+        commitRange(next, true);
       }
     }
     setFocusedDate(date);
@@ -316,7 +313,7 @@ export default function RangeCalendar({
         <button
           type="button"
           aria-label="Previous year"
-          className="px-2 py-1 rounded hover:bg-gray-100"
+          className="px-2 py-1 rounded hover:bg-gray-100 text-gray-400"
           onClick={() => {
             const next = addMonths(currentMonth, -12);
             setCurrentMonth(next);
@@ -331,7 +328,7 @@ export default function RangeCalendar({
         <button
           type="button"
           aria-label="Next year"
-          className="px-2 py-1 rounded hover:bg-gray-100"
+          className="px-2 py-1 rounded hover:bg-gray-100 text-gray-400"
           onClick={() => {
             const next = addMonths(currentMonth, 12);
             setCurrentMonth(next);
