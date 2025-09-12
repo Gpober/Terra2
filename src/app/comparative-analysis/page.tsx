@@ -10,29 +10,25 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import DateRangePicker from "@/components/DateRangePicker";
+import ClassMultiSelect from "@/components/ClassMultiSelect";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { 
-  Download, 
-  RefreshCw, 
-  X, 
-  TrendingUp, 
-  TrendingDown, 
+  Download,
+  RefreshCw,
+  X,
+  TrendingUp,
+  TrendingDown,
   AlertCircle,
   CheckCircle2,
   Sparkles
 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { parse } from "date-fns";
 
 const BRAND_COLORS = {
   primary: "#56B6E9",
   success: "#10B981",
-  warning: "#F59E0B", 
+  warning: "#F59E0B",
   danger: "#EF4444",
   gray: {
     50: '#F9FAFB',
@@ -61,14 +57,12 @@ type Insight = {
 };
 
 export default function EnhancedComparativeAnalysis() {
-  const [mode, setMode] = useState<"period" | "customer">("period");
   const [startA, setStartA] = useState("");
   const [endA, setEndA] = useState("");
   const [startB, setStartB] = useState("");
   const [endB, setEndB] = useState("");
-  const [customerA, setCustomerA] = useState("All Customers");
-  const [customerB, setCustomerB] = useState("All Customers");
-  const [customers, setCustomers] = useState<string[]>([]);
+  const [selectedClasses, setSelectedClasses] = useState<Set<string>>(new Set(["All Classes"]));
+  const [classes, setClasses] = useState<string[]>([]);
   const [dataA, setDataA] = useState<KPIs | null>(null);
   const [dataB, setDataB] = useState<KPIs | null>(null);
   const [varianceRows, setVarianceRows] = useState<{
@@ -91,54 +85,53 @@ export default function EnhancedComparativeAnalysis() {
   const [labelB, setLabelB] = useState("B");
 
   useEffect(() => {
-    fetchCustomers();
+    fetchClasses();
   }, []);
 
-  // Update labels when mode or selections change
+  // Update labels when selections change
   useEffect(() => {
-    if (mode === "period") {
-      const formatPeriodLabel = (start: string, end: string) => {
-        if (!start || !end) return "";
-        const startDate = new Date(start);
-        const endDate = new Date(end);
-        if (start === end) {
-          return startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        }
-        return `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-      };
-      
-      setLabelA(formatPeriodLabel(startA, endA) || "Period A");
-      setLabelB(formatPeriodLabel(startB, endB) || "Period B");
-    } else {
-      setLabelA(customerA || "Customer A");
-      setLabelB(customerB || "Customer B");
-    }
-  }, [mode, startA, endA, startB, endB, customerA, customerB]);
+    const formatPeriodLabel = (start: string, end: string) => {
+      if (!start || !end) return "";
+      const startDate = parse(start, "yyyy-MM-dd", new Date());
+      const endDate = parse(end, "yyyy-MM-dd", new Date());
+      if (start === end) {
+        return startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      }
+      return `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    };
 
-  const fetchCustomers = async () => {
-    const { data } = await supabase.from("journal_entry_lines").select("customer");
+    setLabelA(formatPeriodLabel(startA, endA) || "Period A");
+    setLabelB(formatPeriodLabel(startB, endB) || "Period B");
+  }, [startA, endA, startB, endB]);
+
+  const fetchClasses = async () => {
+    const { data } = await supabase.from("journal_entry_lines").select("class");
     if (data) {
       const unique = Array.from(
         new Set(
           data
-            .map((d) => d.customer)
+            .map((d) => d.class)
             .filter((c) => c && c.trim())
             .map((c) => c.trim()),
         ),
       );
-      setCustomers(["All Customers", ...unique]);
+      setClasses(["All Classes", ...unique]);
     }
   };
 
-  const fetchLines = async (start: string, end: string, customer?: string) => {
+  const fetchLines = async (start: string, end: string, classesFilter?: string[]) => {
     let query = supabase
       .from("journal_entry_lines")
-      .select("account, account_type, debit, credit, class, date, customer")
+      .select("account, account_type, debit, credit, class, date")
       .gte("date", start)
       .lte("date", end);
 
-    if (customer && customer !== "All Customers") {
-      query = query.eq("customer", customer);
+    if (
+      classesFilter &&
+      classesFilter.length > 0 &&
+      !classesFilter.includes("All Classes")
+    ) {
+      query = query.in("class", classesFilter);
     }
 
     const { data, error } = await query;
@@ -166,7 +159,7 @@ export default function EnhancedComparativeAnalysis() {
 
   const generateInsights = (dataA: KPIs, dataB: KPIs, labelA: string, labelB: string): Insight[] => {
     const insights: Insight[] = [];
-    
+
     // Revenue comparison - focus on dollar amounts
     const revDifference = dataA.revenue - dataB.revenue;
     if (Math.abs(revDifference) > 10000) { // Only show if difference is meaningful ($10k+)
@@ -224,25 +217,25 @@ export default function EnhancedComparativeAnalysis() {
 
   const aggregateWeekly = (linesA: any[], linesB: any[]) => {
     const weeks = new Map<string, { A: KPIs; B: KPIs }>();
-    
+
     const processLines = (lines: any[], key: 'A' | 'B') => {
       lines.forEach((line) => {
-        const date = new Date(line.date);
+        const date = parse(line.date, "yyyy-MM-dd", new Date());
         const weekStart = new Date(date);
         weekStart.setDate(date.getDate() - date.getDay());
         const weekKey = weekStart.toISOString().split('T')[0];
-        
+
         if (!weeks.has(weekKey)) {
           weeks.set(weekKey, {
             A: { revenue: 0, cogs: 0, grossProfit: 0, opEx: 0, netIncome: 0 },
             B: { revenue: 0, cogs: 0, grossProfit: 0, opEx: 0, netIncome: 0 }
           });
         }
-        
+
         const week = weeks.get(weekKey)!;
         const amount = (Number(line.credit) || 0) - (Number(line.debit) || 0);
         const type = (line.account_type || "").toLowerCase();
-        
+
         if (type.includes("income") || type.includes("revenue")) {
           week[key].revenue += amount;
         } else if (type.includes("cost of goods sold")) {
@@ -252,17 +245,17 @@ export default function EnhancedComparativeAnalysis() {
         }
       });
     };
-    
+
     processLines(linesA, 'A');
     processLines(linesB, 'B');
-    
+
     return Array.from(weeks.entries())
       .map(([week, data]) => {
         data.A.grossProfit = data.A.revenue + data.A.cogs;
         data.A.netIncome = data.A.grossProfit + data.A.opEx;
         data.B.grossProfit = data.B.revenue + data.B.cogs;
         data.B.netIncome = data.B.grossProfit + data.B.opEx;
-        
+
         return {
           week,
           revenueA: data.A.revenue,
@@ -338,28 +331,18 @@ export default function EnhancedComparativeAnalysis() {
   };
 
   const fetchData = async () => {
-    if (mode === "period" && (!startA || !endA || !startB || !endB)) return;
-    if (mode === "customer" && (!startA || !endA || !customerA || !customerB)) return;
+    if (!startA || !endA || !startB || !endB || selectedClasses.size === 0)
+      return;
 
     setLoading(true);
     setError(null);
     try {
-      let linesA, linesB;
-      
-      if (mode === "period") {
-        // Period comparison: different time periods, same customer filter
-        [linesA, linesB] = await Promise.all([
-          fetchLines(startA, endA),
-          fetchLines(startB, endB),
-        ]);
-      } else {
-        // Customer comparison: same time period, different customers
-        [linesA, linesB] = await Promise.all([
-          fetchLines(startA, endA, customerA),
-          fetchLines(startA, endA, customerB),
-        ]);
-      }
-      
+      const classFilter = Array.from(selectedClasses);
+      const [linesA, linesB] = await Promise.all([
+        fetchLines(startA, endA, classFilter),
+        fetchLines(startB, endB, classFilter),
+      ]);
+
       const kpiA = computeKPIs(linesA);
       const kpiB = computeKPIs(linesB);
       setDataA(kpiA);
@@ -417,6 +400,21 @@ export default function EnhancedComparativeAnalysis() {
         );
       });
     });
+    const inc = sectionTotals(varianceRows.income);
+    const cog = sectionTotals(varianceRows.cogs);
+    const gpA = inc.a + cog.a;
+    const gpB = inc.b + cog.b;
+    const gpVar = gpA - gpB;
+    const gpVarPct = gpB ? gpVar / Math.abs(gpB) : null;
+    lines.push(
+      [
+        "GROSS PROFIT",
+        gpA.toFixed(2),
+        gpB.toFixed(2),
+        gpVar.toFixed(2),
+        gpVarPct !== null ? (gpVarPct * 100).toFixed(2) + "%" : "",
+      ].join(","),
+    );
     const csv = header + lines.join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -461,98 +459,39 @@ export default function EnhancedComparativeAnalysis() {
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Comparative Analysis</h1>
 
         <div className="flex flex-wrap items-end gap-4">
-          <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-700 mb-2">Analysis Type</label>
-            <Select value={mode} onValueChange={(v) => setMode(v as any)}>
-              <SelectTrigger className="w-48 h-11">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="period">Period vs Period</SelectItem>
-                <SelectItem value="customer">Customer vs Customer</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <ClassMultiSelect
+            options={classes}
+            selected={selectedClasses}
+            onChange={setSelectedClasses}
+            accentColor={BRAND_COLORS.primary}
+            label="Class"
+          />
 
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-700 mb-2">
-              {mode === "period" ? "Period A Start" : "Date Range Start"}
-            </label>
-            <input
-              type="date"
-              value={startA}
-              onChange={(e) => setStartA(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 h-11 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          
-          <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-700 mb-2">
-              {mode === "period" ? "Period A End" : "Date Range End"}
-            </label>
-            <input
-              type="date"
-              value={endA}
-              onChange={(e) => setEndA(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 h-11 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            <label className="text-sm font-medium text-gray-700 mb-2">Period A</label>
+            <DateRangePicker
+              startDate={startA}
+              endDate={endA}
+              onChange={(s, e) => {
+                setStartA(s);
+                setEndA(e);
+              }}
+              className="w-64"
             />
           </div>
 
-          {mode === "period" ? (
-            <>
-              <div className="flex flex-col">
-                <label className="text-sm font-medium text-gray-700 mb-2">Period B Start</label>
-                <input
-                  type="date"
-                  value={startB}
-                  onChange={(e) => setStartB(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-2 h-11 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div className="flex flex-col">
-                <label className="text-sm font-medium text-gray-700 mb-2">Period B End</label>
-                <input
-                  type="date"
-                  value={endB}
-                  onChange={(e) => setEndB(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-2 h-11 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex flex-col">
-                <label className="text-sm font-medium text-gray-700 mb-2">Customer A</label>
-                <Select value={customerA} onValueChange={(v) => setCustomerA(v)}>
-                  <SelectTrigger className="w-48 h-11">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col">
-                <label className="text-sm font-medium text-gray-700 mb-2">Customer B</label>
-                <Select value={customerB} onValueChange={(v) => setCustomerB(v)}>
-                  <SelectTrigger className="w-48 h-11">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </>
-          )}
+          <div className="flex flex-col">
+            <label className="text-sm font-medium text-gray-700 mb-2">Period B</label>
+            <DateRangePicker
+              startDate={startB}
+              endDate={endB}
+              onChange={(s, e) => {
+                setStartB(s);
+                setEndB(e);
+              }}
+              className="w-64"
+            />
+          </div>
 
           <button
             onClick={fetchData}
@@ -562,7 +501,7 @@ export default function EnhancedComparativeAnalysis() {
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
             {loading ? "Analyzing..." : "Analyze"}
           </button>
-          
+
           <button
             onClick={handleExport}
             className="inline-flex items-center px-6 py-3 bg-gray-600 text-white rounded-lg text-sm font-medium hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 h-11"
@@ -617,9 +556,9 @@ export default function EnhancedComparativeAnalysis() {
             { key: 'grossProfit', label: 'Gross Profit', valueA: dataA.grossProfit, valueB: dataB.grossProfit },
             { key: 'opEx', label: 'Operating Expenses', valueA: Math.abs(dataA.opEx), valueB: Math.abs(dataB.opEx) },
             { key: 'netIncome', label: 'Net Income', valueA: dataA.netIncome, valueB: dataB.netIncome },
-            { 
-              key: 'margin', 
-              label: 'Gross Margin', 
+            {
+              key: 'margin',
+              label: 'Gross Margin',
               valueA: dataA.revenue ? (dataA.grossProfit / dataA.revenue) * 100 : 0,
               valueB: dataB.revenue ? (dataB.grossProfit / dataB.revenue) * 100 : 0,
               isPercentage: true
@@ -627,7 +566,7 @@ export default function EnhancedComparativeAnalysis() {
           ].map((metric) => {
             const change = metric.valueA - metric.valueB;
             const changePercent = metric.valueB !== 0 ? (change / Math.abs(metric.valueB)) * 100 : 0;
-            
+
             return (
               <div key={metric.key} className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
                 <div className="flex items-center justify-between mb-4">
@@ -639,7 +578,7 @@ export default function EnhancedComparativeAnalysis() {
                     </span>
                   </div>
                 </div>
-                
+
                 <div className="space-y-3">
                   <div>
                     <p className="text-xs text-gray-500 mb-1">{labelA}</p>
@@ -647,19 +586,19 @@ export default function EnhancedComparativeAnalysis() {
                       {metric.isPercentage ? `${metric.valueA.toFixed(1)}%` : formatCurrency(metric.valueA)}
                     </p>
                   </div>
-                  
+
                   <div>
                     <p className="text-xs text-gray-500 mb-1">{labelB}</p>
                     <p className="text-sm text-gray-600">
                       {metric.isPercentage ? `${metric.valueB.toFixed(1)}%` : formatCurrency(metric.valueB)}
                     </p>
                   </div>
-                  
+
                   <div className="pt-2 border-t border-gray-100">
                     <p className="text-xs text-gray-500 mb-1">Variance</p>
                     <p className={`text-sm font-medium ${getChangeColor(change)}`}>
-                      {metric.isPercentage ? 
-                        `${change >= 0 ? '+' : ''}${change.toFixed(1)}pts` : 
+                      {metric.isPercentage ?
+                        `${change >= 0 ? '+' : ''}${change.toFixed(1)}pts` :
                         `${change >= 0 ? '+' : ''}${formatCurrency(change)}`
                       }
                     </p>
@@ -675,7 +614,7 @@ export default function EnhancedComparativeAnalysis() {
       {weeklyData.length > 0 && (
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
           <h2 className="text-xl font-semibold text-gray-900 mb-6">Weekly Performance Trends</h2>
-          
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Revenue Trend */}
             <div>
@@ -683,33 +622,44 @@ export default function EnhancedComparativeAnalysis() {
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={weeklyData} margin={{ left: 20, right: 20, top: 20, bottom: 20 }}>
-                    <XAxis 
-                      dataKey="week" 
-                      tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    <XAxis
+                      dataKey="week"
+                      tickFormatter={(value) =>
+                        parse(value as string, "yyyy-MM-dd", new Date()).toLocaleDateString(
+                          "en-US",
+                          { month: "short", day: "numeric" },
+                        )
+                      }
                       stroke="#6B7280"
                       fontSize={12}
                     />
-                    <YAxis 
-                      tickFormatter={(v) => formatCurrency(v)} 
+                    <YAxis
+                      tickFormatter={(v) => formatCurrency(v)}
                       stroke="#6B7280"
                       fontSize={12}
                     />
-                    <Tooltip 
+                    <Tooltip
                       formatter={(value) => formatCurrency(Number(value))}
-                      labelFormatter={(value) => `Week of ${new Date(value).toLocaleDateString()}`}
-                      contentStyle={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '8px' }}
+                      labelFormatter={(value) =>
+                        `Week of ${parse(value as string, "yyyy-MM-dd", new Date()).toLocaleDateString()}`
+                      }
+                      contentStyle={{
+                        backgroundColor: "white",
+                        border: "1px solid #E5E7EB",
+                        borderRadius: "8px",
+                      }}
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="revenueA" 
+                    <Line
+                      type="monotone"
+                      dataKey="revenueA"
                       stroke={BRAND_COLORS.primary}
                       strokeWidth={3}
                       dot={{ fill: BRAND_COLORS.primary, strokeWidth: 2, r: 4 }}
                       name={labelA}
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="revenueB" 
+                    <Line
+                      type="monotone"
+                      dataKey="revenueB"
                       stroke={BRAND_COLORS.gray[600]}
                       strokeWidth={2}
                       strokeDasharray="5 5"
@@ -727,33 +677,44 @@ export default function EnhancedComparativeAnalysis() {
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={weeklyData} margin={{ left: 20, right: 20, top: 20, bottom: 20 }}>
-                    <XAxis 
-                      dataKey="week" 
-                      tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    <XAxis
+                      dataKey="week"
+                      tickFormatter={(value) =>
+                        parse(value as string, "yyyy-MM-dd", new Date()).toLocaleDateString(
+                          "en-US",
+                          { month: "short", day: "numeric" },
+                        )
+                      }
                       stroke="#6B7280"
                       fontSize={12}
                     />
-                    <YAxis 
-                      tickFormatter={(v) => formatCurrency(v)} 
+                    <YAxis
+                      tickFormatter={(v) => formatCurrency(v)}
                       stroke="#6B7280"
                       fontSize={12}
                     />
-                    <Tooltip 
+                    <Tooltip
                       formatter={(value) => formatCurrency(Number(value))}
-                      labelFormatter={(value) => `Week of ${new Date(value).toLocaleDateString()}`}
-                      contentStyle={{ backgroundColor: 'white', border: '1px solid #E5E7EB', borderRadius: '8px' }}
+                      labelFormatter={(value) =>
+                        `Week of ${parse(value as string, "yyyy-MM-dd", new Date()).toLocaleDateString()}`
+                      }
+                      contentStyle={{
+                        backgroundColor: "white",
+                        border: "1px solid #E5E7EB",
+                        borderRadius: "8px",
+                      }}
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="netIncomeA" 
+                    <Line
+                      type="monotone"
+                      dataKey="netIncomeA"
                       stroke={BRAND_COLORS.success}
                       strokeWidth={3}
                       dot={{ fill: BRAND_COLORS.success, strokeWidth: 2, r: 4 }}
                       name={labelA}
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="netIncomeB" 
+                    <Line
+                      type="monotone"
+                      dataKey="netIncomeB"
                       stroke={BRAND_COLORS.gray[600]}
                       strokeWidth={2}
                       strokeDasharray="5 5"
@@ -777,7 +738,7 @@ export default function EnhancedComparativeAnalysis() {
             <h2 className="text-xl font-semibold text-gray-900">Account-Level Analysis</h2>
             <p className="text-sm text-gray-600 mt-1">Detailed variance breakdown by account</p>
           </div>
-          
+
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -914,6 +875,42 @@ export default function EnhancedComparativeAnalysis() {
                   </>
                 )}
 
+                {/* Gross Profit Summary */}
+                {(() => {
+                  if (
+                    varianceRows.income.length > 0 ||
+                    varianceRows.cogs.length > 0
+                  ) {
+                    const inc = sectionTotals(varianceRows.income);
+                    const cog = sectionTotals(varianceRows.cogs);
+                    const a = inc.a + cog.a;
+                    const b = inc.b + cog.b;
+                    const v = a - b;
+                    const vp = b ? v / Math.abs(b) : null;
+
+                    return (
+                      <tr className="bg-blue-50">
+                        <td className="px-6 py-4 text-sm font-bold text-blue-800">
+                          GROSS PROFIT
+                        </td>
+                        <td className="px-6 py-4 text-sm font-bold text-blue-800 text-right">
+                          {formatCurrency(a)}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-bold text-blue-800 text-right">
+                          {formatCurrency(b)}
+                        </td>
+                        <td className={`px-6 py-4 text-sm font-bold text-right ${getChangeColor(v)}`}>
+                          {formatCurrency(v)}
+                        </td>
+                        <td className={`px-6 py-4 text-sm font-bold text-right ${getChangeColor(v)}`}>
+                          {vp !== null ? formatPercentage(vp * 100) : ""}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return null;
+                })()}
+
                 {/* Expenses Section */}
                 {varianceRows.expenses.length > 0 && (
                   <>
@@ -980,7 +977,7 @@ export default function EnhancedComparativeAnalysis() {
                   const b = inc.b + cog.b + exp.b;
                   const v = a - b;
                   const vp = b ? v / Math.abs(b) : null;
-                  
+
                   return (
                     <tr className="bg-gray-100 border-t-2 border-gray-300">
                       <td className="px-6 py-4 text-sm font-bold text-gray-900">
@@ -1034,7 +1031,7 @@ export default function EnhancedComparativeAnalysis() {
                       Amount
                     </th>
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Customer
+                      Class
                     </th>
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Set
@@ -1052,7 +1049,7 @@ export default function EnhancedComparativeAnalysis() {
                           {formatCurrency(Math.abs(amt))}
                         </td>
                         <td className="px-6 py-4 text-sm text-center text-gray-600">
-                          {t.customer || "-"}
+                          {t.class || "-"}
                         </td>
                         <td className="px-6 py-4 text-sm text-center">
                           <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
@@ -1073,3 +1070,4 @@ export default function EnhancedComparativeAnalysis() {
     </div>
   );
 }
+
