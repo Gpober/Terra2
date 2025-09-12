@@ -1253,12 +1253,31 @@ export default function FinancialsPage() {
     );
   };
 
+  // Get unique properties that have activity in the current data set
+  const getActiveProperties = () => {
+    const active = new Set<string>();
+    plAccounts.forEach((acc) => {
+      acc.transactions.forEach((tx) => {
+        if (tx.class) {
+          active.add(tx.class);
+        }
+      });
+    });
+
+    let result = Array.from(active);
+    const selected = Array.from(selectedProperties);
+    if (selected.length > 0 && selected.length < availableProperties.length) {
+      result = result.filter((p) => selectedProperties.has(p));
+    }
+    return result.sort();
+  };
+
   // Get column headers based on view mode - TIMEZONE INDEPENDENT
   const getColumnHeaders = () => {
     if (viewMode === "Total") {
       return [];
     } else if (viewMode === "Property") {
-      return availableProperties;
+      return getActiveProperties();
     } else if (viewMode === "Detail") {
       // For Detail view, show months in the date range using timezone-independent method
       const { startDate, endDate } = calculateDateRange();
