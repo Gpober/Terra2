@@ -41,6 +41,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
+import MultiSelect from "@/components/MultiSelect";
 import { supabase } from "@/lib/supabaseClient";
 
 // I AM CFO Brand Colors
@@ -155,11 +156,9 @@ export default function FinancialOverviewPage() {
   const [timePeriodDropdownOpen, setTimePeriodDropdownOpen] = useState(false);
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
   const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
-  const [propertyDropdownOpen, setPropertyDropdownOpen] = useState(false);
   const timePeriodDropdownRef = useRef<HTMLDivElement>(null);
   const monthDropdownRef = useRef<HTMLDivElement>(null);
   const yearDropdownRef = useRef<HTMLDivElement>(null);
-  const propertyDropdownRef = useRef<HTMLDivElement>(null);
   const [financialData, setFinancialData] = useState(null);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -197,12 +196,9 @@ export default function FinancialOverviewPage() {
   const [loadingProperty, setLoadingProperty] = useState(false);
   const [trendError, setTrendError] = useState<string | null>(null);
   const [propertyError, setPropertyError] = useState<string | null>(null);
-  const [selectedProperties, setSelectedProperties] = useState<Set<string>>(
-    new Set(["All Properties"]),
-  );
-  const [availableProperties, setAvailableProperties] = useState<string[]>([
-    "All Properties",
-  ]);
+  const [selectedProperties, setSelectedProperties] = useState<Set<string>>(new Set());
+  const propertiesInitialized = useRef(false);
+  const [availableProperties, setAvailableProperties] = useState<string[]>([]);
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   type SortColumn =
@@ -360,12 +356,6 @@ export default function FinancialOverviewPage() {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        propertyDropdownRef.current &&
-        !propertyDropdownRef.current.contains(event.target as Node)
-      ) {
-        setPropertyDropdownOpen(false);
-      }
-      if (
         timePeriodDropdownRef.current &&
         !timePeriodDropdownRef.current.contains(event.target as Node)
       ) {
@@ -405,7 +395,21 @@ export default function FinancialOverviewPage() {
           classes.add(row.class.trim());
         }
       });
-      setAvailableProperties(["All Properties", ...Array.from(classes).sort()]);
+      const sorted = Array.from(classes).sort();
+      setAvailableProperties(sorted);
+      setSelectedProperties((prev) => {
+        if (!propertiesInitialized.current) {
+          propertiesInitialized.current = true;
+          return prev.size === 0
+            ? new Set(sorted)
+            : new Set(Array.from(prev).filter((p) => sorted.includes(p)));
+        }
+        if (prev.size === 0) return prev;
+        const next = new Set(
+          Array.from(prev).filter((p) => sorted.includes(p))
+        );
+        return next.size > 0 ? next : new Set(sorted);
+      });
     } catch (err) {
       console.error("Error fetching properties:", err);
     }
@@ -424,9 +428,7 @@ export default function FinancialOverviewPage() {
       const { startDate, endDate } = calculateDateRange();
       const monthIndex = monthsList.indexOf(selectedMonth);
       const year = Number.parseInt(selectedYear);
-      const selectedPropertyList = Array.from(selectedProperties).filter(
-        (c) => c !== "All Properties",
-      );
+      const selectedPropertyList = Array.from(selectedProperties);
 
       console.log(
         `🔍 FINANCIAL OVERVIEW - Fetching data for ${selectedMonth} ${selectedYear}`,
@@ -436,7 +438,7 @@ export default function FinancialOverviewPage() {
         `🏢 Property Filter: ${
           selectedPropertyList.length > 0
             ? selectedPropertyList.join(", ")
-            : "All Properties"
+            : "All properties"
         }`,
       );
 
@@ -953,9 +955,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
       setLoadingTrend(true);
       setTrendError(null);
       const endMonth = monthsList.indexOf(selectedMonth) + 1;
-      const selectedPropertyList = Array.from(selectedProperties).filter(
-        (c) => c !== "All Properties",
-      );
+      const selectedPropertyList = Array.from(selectedProperties);
       const propertyQuery =
         selectedPropertyList.length > 0
           ? `&classId=${encodeURIComponent(selectedPropertyList.join(","))}`
@@ -1581,57 +1581,16 @@ const processCashFlowTransactions = (transactions: any[]) => {
                     </CardTitle>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="relative" ref={propertyDropdownRef}>
-                      <button
-                        onClick={() => setPropertyDropdownOpen(!propertyDropdownOpen)}
-                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
-                        style={
-                          {
-                            "--tw-ring-color": BRAND_COLORS.primary + "33",
-                          } as React.CSSProperties
-                        }
-                      >
-                        Property: {Array.from(selectedProperties).join(", ")}
-                        <ChevronDown className="w-4 h-4 ml-1" />
-                      </button>
-
-                      {propertyDropdownOpen && (
-                        <div className="absolute right-0 z-10 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                          {availableProperties.map((cust) => (
-                            <label
-                              key={cust}
-                              className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedProperties.has(cust)}
-                                onChange={(e) => {
-                                  const newSelected = new Set(selectedProperties);
-                                  if (e.target.checked) {
-                                    if (cust === "All Properties") {
-                                      newSelected.clear();
-                                      newSelected.add("All Properties");
-                                    } else {
-                                      newSelected.delete("All Properties");
-                                      newSelected.add(cust);
-                                    }
-                                  } else {
-                                    newSelected.delete(cust);
-                                    if (newSelected.size === 0) {
-                                      newSelected.add("All Properties");
-                                    }
-                                  }
-                                  setSelectedProperties(newSelected);
-                                }}
-                                className="mr-3 rounded"
-                                style={{ accentColor: BRAND_COLORS.primary }}
-                              />
-                              {cust}
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <MultiSelect
+                      options={availableProperties.map((p) => ({
+                        value: p,
+                        label: p,
+                      }))}
+                      selected={selectedProperties}
+                      onChange={setSelectedProperties}
+                      placeholder="Select properties"
+                      allLabel="All properties"
+                    />
                     <Button
                       variant={chartType === "line" ? "default" : "outline"}
                       className="h-8 w-8 p-0"

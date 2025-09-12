@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import DateRangePicker from "@/components/DateRangePicker";
-import ClassMultiSelect from "@/components/ClassMultiSelect";
+import MultiSelect from "@/components/MultiSelect";
 import { 
   Download, 
   RefreshCw, 
@@ -456,10 +456,12 @@ export default function EnhancedComparativeAnalysis() {
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Comparative Analysis</h1>
 
         <div className="flex flex-wrap items-end gap-4">
-          <ClassMultiSelect
-            options={classes}
+          <MultiSelect
+            options={classes.map((c) => ({ value: c, label: c }))}
             selected={selectedClasses}
             onChange={setSelectedClasses}
+            placeholder="Select classes"
+            allLabel="All classes"
           />
 
           <div className="flex flex-col">
