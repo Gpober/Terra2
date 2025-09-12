@@ -1088,11 +1088,11 @@ const processCashFlowTransactions = (transactions: any[]) => {
   };
 
   const metricOptions = [
-    { key: "income", label: "Revenue" },
-    { key: "cogs", label: "COGS" },
-    { key: "gp", label: "Gross Profit" },
-    { key: "expenses", label: "Expenses" },
-    { key: "ni", label: "Net Income" },
+    { key: "income", label: "Revenue", icon: TrendingUp },
+    { key: "cogs", label: "COGS", icon: Activity },
+    { key: "gp", label: "Gross Profit", icon: Target },
+    { key: "expenses", label: "Expenses", icon: CreditCard },
+    { key: "ni", label: "Net Income", icon: DollarSign },
   ] as const;
 
   const { startDate: propertyStart, endDate: propertyEnd } =
@@ -1642,7 +1642,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                     >
                       <TrendingUp
                         className={`h-4 w-4 ${
-                          chartType === "line" ? "" : "text-black"
+                          chartType === "line" ? "" : "text-gray-600"
                         }`}
                       />
                     </Button>
@@ -1656,7 +1656,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                     >
                       <BarChart3
                         className={`h-4 w-4 ${
-                          chartType === "bar" ? "" : "text-black"
+                          chartType === "bar" ? "" : "text-gray-600"
                         }`}
                       />
                     </Button>
@@ -1764,13 +1764,18 @@ const processCashFlowTransactions = (transactions: any[]) => {
                       {metricOptions.map((m) => (
                         <Button
                           key={m.key}
-                          className={`h-8 px-2 text-xs ${
+                          className={`h-8 px-2 text-xs flex items-center gap-1 ${
                             propertyChartMetric === m.key
                               ? ""
                               : "bg-white text-gray-700 border border-gray-200"
                           }`}
                           onClick={() => setPropertyChartMetric(m.key)}
                         >
+                          <m.icon
+                            className={`h-4 w-4 ${
+                              propertyChartMetric === m.key ? "" : "text-gray-600"
+                            }`}
+                          />
                           {m.label}
                         </Button>
                       ))}
@@ -1786,7 +1791,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                       >
                         <PieChart
                           className={`h-4 w-4 ${
-                            propertyChartType === "pie" ? "" : "text-black"
+                            propertyChartType === "pie" ? "" : "text-gray-600"
                           }`}
                         />
                       </Button>
@@ -1800,7 +1805,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                       >
                         <BarChart3
                           className={`h-4 w-4 ${
-                            propertyChartType === "bar" ? "" : "text-black"
+                            propertyChartType === "bar" ? "" : "text-gray-600"
                           }`}
                         />
                       </Button>
