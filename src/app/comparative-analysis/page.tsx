@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import DateRangePicker from "@/components/DateRangePicker";
-import CustomerMultiSelect from "@/components/CustomerMultiSelect";
+import ClassMultiSelect from "@/components/ClassMultiSelect";
 import { 
   Download, 
   RefreshCw, 
@@ -61,8 +61,8 @@ export default function EnhancedComparativeAnalysis() {
   const [endA, setEndA] = useState("");
   const [startB, setStartB] = useState("");
   const [endB, setEndB] = useState("");
-  const [selectedCustomers, setSelectedCustomers] = useState<Set<string>>(new Set(["All Customers"]));
-  const [customers, setCustomers] = useState<string[]>([]);
+  const [selectedClasses, setSelectedClasses] = useState<Set<string>>(new Set());
+  const [classes, setClasses] = useState<string[]>([]);
   const [dataA, setDataA] = useState<KPIs | null>(null);
   const [dataB, setDataB] = useState<KPIs | null>(null);
   const [varianceRows, setVarianceRows] = useState<{
@@ -85,7 +85,7 @@ export default function EnhancedComparativeAnalysis() {
   const [labelB, setLabelB] = useState("B");
 
   useEffect(() => {
-    fetchCustomers();
+    fetchClasses();
   }, []);
 
   // Update labels when selections change
@@ -104,34 +104,31 @@ export default function EnhancedComparativeAnalysis() {
     setLabelB(formatPeriodLabel(startB, endB) || "Period B");
   }, [startA, endA, startB, endB]);
 
-  const fetchCustomers = async () => {
-    const { data } = await supabase.from("journal_entry_lines").select("customer");
+  const fetchClasses = async () => {
+    const { data } = await supabase.from("journal_entry_lines").select("class");
     if (data) {
       const unique = Array.from(
         new Set(
           data
-            .map((d) => d.customer)
+            .map((d) => d.class)
             .filter((c) => c && c.trim())
             .map((c) => c.trim()),
         ),
       );
-      setCustomers(["All Customers", ...unique]);
+      setClasses(unique);
+      setSelectedClasses(new Set(unique));
     }
   };
 
-  const fetchLines = async (start: string, end: string, customersFilter?: string[]) => {
+  const fetchLines = async (start: string, end: string, classesFilter?: string[]) => {
     let query = supabase
       .from("journal_entry_lines")
       .select("account, account_type, debit, credit, class, date, customer")
       .gte("date", start)
       .lte("date", end);
 
-    if (
-      customersFilter &&
-      customersFilter.length > 0 &&
-      !customersFilter.includes("All Customers")
-    ) {
-      query = query.in("customer", customersFilter);
+    if (classesFilter && classesFilter.length > 0) {
+      query = query.in("class", classesFilter);
     }
 
     const { data, error } = await query;
@@ -331,16 +328,16 @@ export default function EnhancedComparativeAnalysis() {
   };
 
   const fetchData = async () => {
-    if (!startA || !endA || !startB || !endB || selectedCustomers.size === 0)
-      return;
+    if (!startA || !endA || !startB || !endB) return;
 
     setLoading(true);
     setError(null);
     try {
-      const customerFilter = Array.from(selectedCustomers);
+      const classFilter =
+        selectedClasses.size > 0 ? Array.from(selectedClasses) : undefined;
       const [linesA, linesB] = await Promise.all([
-        fetchLines(startA, endA, customerFilter),
-        fetchLines(startB, endB, customerFilter),
+        fetchLines(startA, endA, classFilter),
+        fetchLines(startB, endB, classFilter),
       ]);
 
       const kpiA = computeKPIs(linesA);
@@ -459,12 +456,10 @@ export default function EnhancedComparativeAnalysis() {
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Comparative Analysis</h1>
 
         <div className="flex flex-wrap items-end gap-4">
-          <CustomerMultiSelect
-            options={customers}
-            selected={selectedCustomers}
-            onChange={setSelectedCustomers}
-            accentColor={BRAND_COLORS.primary}
-            label="Customer"
+          <ClassMultiSelect
+            options={classes}
+            selected={selectedClasses}
+            onChange={setSelectedClasses}
           />
 
           <div className="flex flex-col">
