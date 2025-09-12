@@ -2,6 +2,7 @@
 
 import React from "react"
 import { useState, useEffect } from "react"
+import MultiSelect from "@/components/MultiSelect"
 import { getCurrentMonthRange } from "@/lib/utils"
 import { RefreshCw, ChevronDown, ChevronRight, X, Download } from "lucide-react"
 import * as XLSX from "xlsx"
@@ -136,7 +137,7 @@ export default function CashFlowPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthName)
   const [selectedYear, setSelectedYear] = useState<string>(currentYear)
   const [timePeriod, setTimePeriod] = useState<TimePeriod>("Monthly")
-  const [selectedProperty, setSelectedProperty] = useState("All Properties")
+  const [selectedProperties, setSelectedProperties] = useState<string[]>([])
   const [selectedBankAccount, setSelectedBankAccount] = useState("All Bank Accounts")
   const [viewMode, setViewMode] = useState<ViewMode>("offset")
   const [periodType, setPeriodType] = useState<PeriodType>("monthly")
@@ -179,7 +180,7 @@ export default function CashFlowPage() {
   const [bankAccountData, setBankAccountData] = useState<BankAccountData[]>([])
 
   // Common state
-  const [availableProperties, setAvailableProperties] = useState<string[]>(["All Properties"])
+  const [availableProperties, setAvailableProperties] = useState<string[]>([])
   const [availableBankAccounts, setAvailableBankAccounts] = useState<string[]>(["All Bank Accounts"])
   const [error, setError] = useState<string | null>(null)
   const [showTransactionModal, setShowTransactionModal] = useState(false)
@@ -738,7 +739,9 @@ export default function CashFlowPage() {
         if (row.class) properties.add(row.class)
       })
 
-      setAvailableProperties(["All Properties", ...Array.from(properties).sort()])
+      const propertyList = Array.from(properties).sort()
+      setAvailableProperties(propertyList)
+      setSelectedProperties(propertyList)
 
       // ENHANCED: Fetch bank accounts using entry_bank_account field
       const { data: bankData, error: bankError } = await supabase
@@ -784,8 +787,11 @@ export default function CashFlowPage() {
         .eq("is_cash_account", true)
         .not("entry_bank_account", "is", null)
 
-      if (selectedProperty !== "All Properties") {
-        query = query.eq("class", selectedProperty)
+      if (
+        selectedProperties.length > 0 &&
+        selectedProperties.length < availableProperties.length
+      ) {
+        query = query.in("class", selectedProperties)
       }
       if (selectedBankAccount !== "All Bank Accounts") {
         query = query.eq("entry_bank_account", selectedBankAccount)
@@ -858,8 +864,11 @@ export default function CashFlowPage() {
       .gte("date", startDate)
       .lte("date", endDate)
 
-    if (selectedProperty !== "All Properties") {
-      viewQuery = viewQuery.eq("class", selectedProperty)
+    if (
+      selectedProperties.length > 0 &&
+      selectedProperties.length < availableProperties.length
+    ) {
+      viewQuery = viewQuery.in("class", selectedProperties)
     }
     if (selectedBankAccount !== "All Bank Accounts") {
       viewQuery = viewQuery.eq("cash_bank_account", selectedBankAccount)
@@ -881,8 +890,11 @@ export default function CashFlowPage() {
       .lte("date", endDate)
       .eq("is_cash_account", true)
 
-    if (selectedProperty !== "All Properties") {
-      cashQuery = cashQuery.eq("class", selectedProperty)
+    if (
+      selectedProperties.length > 0 &&
+      selectedProperties.length < availableProperties.length
+    ) {
+      cashQuery = cashQuery.in("class", selectedProperties)
     }
     if (selectedBankAccount !== "All Bank Accounts") {
       cashQuery = cashQuery.eq("entry_bank_account", selectedBankAccount)
@@ -1065,8 +1077,11 @@ export default function CashFlowPage() {
       .lte("date", endDate)
       .eq("is_cash_account", true)
 
-    if (selectedProperty !== "All Properties") {
-      cashQuery = cashQuery.eq("class", selectedProperty)
+    if (
+      selectedProperties.length > 0 &&
+      selectedProperties.length < availableProperties.length
+    ) {
+      cashQuery = cashQuery.in("class", selectedProperties)
     }
     if (selectedBankAccount !== "All Bank Accounts") {
       cashQuery = cashQuery.eq("entry_bank_account", selectedBankAccount)
@@ -1437,7 +1452,7 @@ export default function CashFlowPage() {
     selectedYear,
     customStartDate,
     customEndDate,
-    selectedProperty,
+    selectedProperties,
     selectedBankAccount,
     viewMode,
     periodType,
@@ -1596,18 +1611,12 @@ export default function CashFlowPage() {
             )}
 
             {/* Property Filter */}
-            <select
-              value={selectedProperty}
-              onChange={(e) => setSelectedProperty(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-500 focus:outline-none focus:ring-2 transition-all"
-              style={{ "--tw-ring-color": BRAND_COLORS.secondary + "33" } as React.CSSProperties}
-            >
-              {availableProperties.map((property) => (
-                <option key={property} value={property}>
-                  {property}
-                </option>
-              ))}
-            </select>
+            <MultiSelect
+              options={availableProperties.map((p) => ({ value: p, label: p }))}
+              selected={selectedProperties}
+              onChange={setSelectedProperties}
+              label="properties"
+            />
 
             {/* Bank Account Filter */}
             {(viewMode === "offset" ||
@@ -1778,11 +1787,14 @@ export default function CashFlowPage() {
                           : timePeriod === "Trailing 12"
                             ? `For ${formatDate(calculateDateRange().startDate)} - ${formatDate(calculateDateRange().endDate)}`
                             : `For ${timePeriod} Period`}
-                  {selectedProperty !== "All Properties" && (
-                    <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                      Property: {selectedProperty}
-                    </span>
-                  )}
+                  {selectedProperties.length > 0 &&
+                    selectedProperties.length < availableProperties.length && (
+                      <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                        Property: {selectedProperties[0]}
+                        {selectedProperties.length > 1 &&
+                          ` +${selectedProperties.length - 1} more`}
+                      </span>
+                    )}
                 </div>
                 <div className="text-xs text-blue-600 mt-1">
                   🏦 Enhanced with entry_bank_account field - Shows exact bank source for every transaction
@@ -1923,11 +1935,14 @@ export default function CashFlowPage() {
                           : timePeriod === "Trailing 12"
                             ? `For ${formatDate(calculateDateRange().startDate)} - ${formatDate(calculateDateRange().endDate)}`
                             : `For ${timePeriod} Period`}
-                  {selectedProperty !== "All Properties" && (
-                    <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                      Property: {selectedProperty}
-                    </span>
-                  )}
+                  {selectedProperties.length > 0 &&
+                    selectedProperties.length < availableProperties.length && (
+                      <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                        Property: {selectedProperties[0]}
+                        {selectedProperties.length > 1 &&
+                          ` +${selectedProperties.length - 1} more`}
+                      </span>
+                    )}
                   {selectedBankAccount !== "All Bank Accounts" && (
                     <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
                       Bank: {selectedBankAccount}
@@ -2839,11 +2854,14 @@ export default function CashFlowPage() {
                           : timePeriod === "Trailing 12"
                             ? `For ${formatDate(calculateDateRange().startDate)} - ${formatDate(calculateDateRange().endDate)}`
                             : `For ${timePeriod} Period`}
-                  {selectedProperty !== "All Properties" && (
-                    <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                      Property: {selectedProperty}
-                    </span>
-                  )}
+                  {selectedProperties.length > 0 &&
+                    selectedProperties.length < availableProperties.length && (
+                      <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                        Property: {selectedProperties[0]}
+                        {selectedProperties.length > 1 &&
+                          ` +${selectedProperties.length - 1} more`}
+                      </span>
+                    )}
                   {selectedBankAccount !== "All Bank Accounts" && (
                     <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
                       Bank: {selectedBankAccount}

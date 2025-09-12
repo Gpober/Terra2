@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { Download, RefreshCw, Plus, X, ChevronDown } from 'lucide-react';
+import MultiSelect from '@/components/MultiSelect';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -167,70 +168,6 @@ const getNightsInMonth = (
     ? Math.round((totalNights / availableNights) * 100)
     : 0;
   return { totalRevenue, avgNightlyRate, avgStayLength, occupancyRate };
-};
-
-const PropertyDropdown = ({
-  properties,
-  selectedProperties,
-  onPropertyChange,
-  isOpen,
-  onToggle
-}: {
-  properties: Property[];
-  selectedProperties: string[];
-  onPropertyChange: (id: string) => void;
-  isOpen: boolean;
-  onToggle: () => void;
-}) => {
-  const dropdownText = selectedProperties.length === 0 
-    ? 'No Properties' 
-    : selectedProperties.length === properties.length 
-      ? 'All Properties' 
-      : selectedProperties.length === 1 
-        ? properties.find(p => p.id === selectedProperties[0])?.name || '1 Property' 
-        : `${selectedProperties.length} Properties`;
-
-  return (
-    <div className="relative">
-      <button
-        onClick={onToggle}
-        className="flex items-center justify-between w-48 px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-500 focus:outline-none focus:ring-2 transition-all"
-        style={{ '--tw-ring-color': `${BRAND_COLORS.secondary}33` } as React.CSSProperties}
-      >
-        <span>{dropdownText}</span>
-        <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-      
-      {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-          <div className="flex justify-between px-4 py-2 text-sm border-b border-gray-200">
-            <button onClick={() => onPropertyChange('selectAll')} className="text-blue-600 hover:underline">
-              Select All
-            </button>
-            <button onClick={() => onPropertyChange('clearAll')} className="text-blue-600 hover:underline">
-              Clear All
-            </button>
-          </div>
-          {properties.map((property) => (
-            <div
-              key={property.id}
-              className="flex items-center gap-2 px-4 py-2 hover:bg-gray-50 cursor-pointer"
-              onClick={() => onPropertyChange(property.id)}
-            >
-              <input
-                type="checkbox"
-                checked={selectedProperties.includes(property.id)}
-                onChange={() => onPropertyChange(property.id)}
-                className="w-4 h-4"
-                style={{ accentColor: BRAND_COLORS.primary }}
-              />
-              <label className="text-sm text-gray-900 flex-1 cursor-pointer">{property.name}</label>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 };
 
 const NewReservationModal = ({
@@ -428,7 +365,6 @@ const ReservationsTab: React.FC = () => {
   const [selectedProperties, setSelectedProperties] = useState<string[]>(['miami-beach', 'downtown-loft', 'suburb-house']);
   const [currentView, setCurrentView] = useState<ChartMode>('monthly');
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date(2025, 5, 28));
-  const [propertyDropdownOpen, setPropertyDropdownOpen] = useState(false);
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
   const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
   const monthDropdownRef = useRef<HTMLDivElement>(null);
@@ -670,24 +606,6 @@ async function connectToAPI() {
   const getPropertyId = (propertyName: string): string => {
     const property = currentData.properties.find(p => p.name === propertyName);
     return property ? property.id : slugify(propertyName);
-  };
-
-  const handlePropertyCheckboxChange = (propertyId: string): void => {
-    if (propertyId === 'selectAll') {
-      const allProperties = currentData.properties.map(p => p.id);
-      setSelectedProperties(allProperties);
-      return;
-    }
-    if (propertyId === 'clearAll') {
-      setSelectedProperties([]);
-      return;
-    }
-    setSelectedProperties(prev => {
-      if (prev.includes(propertyId)) {
-        return prev.filter(id => id !== propertyId);
-      }
-      return [...prev, propertyId];
-    });
   };
 
   const getFilteredReservations = (): Reservation[] => {
@@ -1227,12 +1145,11 @@ async function connectToAPI() {
                 )}
               </div>
 
-              <PropertyDropdown
-                properties={currentData.properties}
-                selectedProperties={selectedProperties}
-                onPropertyChange={handlePropertyCheckboxChange}
-                isOpen={propertyDropdownOpen}
-                onToggle={() => setPropertyDropdownOpen(!propertyDropdownOpen)}
+              <MultiSelect
+                options={currentData.properties.map((p) => ({ value: p.id, label: p.name }))}
+                selected={selectedProperties}
+                onChange={setSelectedProperties}
+                label="properties"
               />
 
               <select
@@ -1708,13 +1625,6 @@ async function connectToAPI() {
       <Notification notification={notification} />
       <CalendarTooltip tooltip={calendarTooltip} />
 
-      {/* Click outside to close dropdown */}
-      {propertyDropdownOpen && (
-        <div
-          className="fixed inset-0 z-10"
-          onClick={() => setPropertyDropdownOpen(false)}
-        />
-      )}
     </div>
   );
 };
