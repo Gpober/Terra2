@@ -1633,13 +1633,21 @@ const processCashFlowTransactions = (transactions: any[]) => {
                       )}
                     </div>
                     <Button
-                      className={`h-8 w-8 p-0 ${chartType === "line" ? "" : "bg-white text-gray-700 border border-gray-200"}`}
+                      className={`h-8 w-8 p-0 ${
+                        chartType === "line"
+                          ? ""
+                          : "bg-white text-black border border-gray-200"
+                      }`}
                       onClick={() => setChartType("line")}
                     >
                       <TrendingUp className="h-4 w-4" />
                     </Button>
                     <Button
-                      className={`h-8 w-8 p-0 ${chartType === "bar" ? "" : "bg-white text-gray-700 border border-gray-200"}`}
+                      className={`h-8 w-8 p-0 ${
+                        chartType === "bar"
+                          ? ""
+                          : "bg-white text-black border border-gray-200"
+                      }`}
                       onClick={() => setChartType("bar")}
                     >
                       <BarChart3 className="h-4 w-4" />
@@ -1764,7 +1772,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                         className={`h-8 w-8 p-0 ${
                           propertyChartType === "pie"
                             ? ""
-                            : "bg-white text-gray-700 border border-gray-200"
+                            : "bg-white text-black border border-gray-200"
                         }`}
                         onClick={() => setPropertyChartType("pie")}
                       >
@@ -1774,7 +1782,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                         className={`h-8 w-8 p-0 ${
                           propertyChartType === "bar"
                             ? ""
-                            : "bg-white text-gray-700 border border-gray-200"
+                            : "bg-white text-black border border-gray-200"
                         }`}
                         onClick={() => setPropertyChartType("bar")}
                       >
