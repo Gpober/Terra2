@@ -31,7 +31,7 @@ export default function RangeCalendar({ value, onChange }: RangeCalendarProps) {
       mode="range"
       selected={selected}
       onSelect={handleSelect}
-      numberOfMonths={2}
+      numberOfMonths={1}
       defaultMonth={value.start ?? new Date()}
     />
   );

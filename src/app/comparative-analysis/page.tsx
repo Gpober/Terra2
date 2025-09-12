@@ -61,7 +61,7 @@ export default function EnhancedComparativeAnalysis() {
   const [endA, setEndA] = useState("");
   const [startB, setStartB] = useState("");
   const [endB, setEndB] = useState("");
-  const [selectedClasses, setSelectedClasses] = useState<Set<string>>(new Set(["All Classes"]));
+  const [selectedClasses, setSelectedClasses] = useState<Set<string>>(new Set());
   const [classes, setClasses] = useState<string[]>([]);
   const [dataA, setDataA] = useState<KPIs | null>(null);
   const [dataB, setDataB] = useState<KPIs | null>(null);
@@ -115,7 +115,8 @@ export default function EnhancedComparativeAnalysis() {
             .map((c) => c.trim()),
         ),
       );
-      setClasses(["All Classes", ...unique]);
+      setClasses(unique);
+      setSelectedClasses(new Set(unique));
     }
   };
 
@@ -126,11 +127,7 @@ export default function EnhancedComparativeAnalysis() {
       .gte("date", start)
       .lte("date", end);
 
-    if (
-      classesFilter &&
-      classesFilter.length > 0 &&
-      !classesFilter.includes("All Classes")
-    ) {
+    if (classesFilter && classesFilter.length > 0) {
       query = query.in("class", classesFilter);
     }
 
@@ -331,13 +328,13 @@ export default function EnhancedComparativeAnalysis() {
   };
 
   const fetchData = async () => {
-    if (!startA || !endA || !startB || !endB || selectedClasses.size === 0)
-      return;
+    if (!startA || !endA || !startB || !endB) return;
 
     setLoading(true);
     setError(null);
     try {
-      const classFilter = Array.from(selectedClasses);
+      const classFilter =
+        selectedClasses.size > 0 ? Array.from(selectedClasses) : undefined;
       const [linesA, linesB] = await Promise.all([
         fetchLines(startA, endA, classFilter),
         fetchLines(startB, endB, classFilter),
