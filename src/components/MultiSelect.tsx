@@ -4,46 +4,60 @@ import * as React from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "@/lib/utils";
 
-type ClassMultiSelectProps = {
-  options: string[];
+type Option = { value: string; label: string };
+
+type MultiSelectProps = {
+  options: Option[];
   selected: Set<string>;
   onChange: (next: Set<string>) => void;
+  placeholder?: string;
+  allLabel?: string;
 };
 
-export default function ClassMultiSelect({ options, selected, onChange }: ClassMultiSelectProps) {
+export default function MultiSelect({
+  options,
+  selected,
+  onChange,
+  placeholder = "Select",
+  allLabel = "All",
+}: MultiSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
 
-  const allSelected = options.length > 0 && selected.size === options.length;
+  const allSelected =
+    options.length > 0 && selected.size === options.length;
 
   const filtered = React.useMemo(
     () =>
       options.filter((opt) =>
-        opt.toLowerCase().includes(search.toLowerCase())
+        opt.label.toLowerCase().includes(search.toLowerCase())
       ),
     [options, search]
   );
 
-  const toggle = (opt: string) => {
+  const toggle = (value: string) => {
     const next = new Set(selected);
-    if (next.has(opt)) {
-      next.delete(opt);
+    if (next.has(value)) {
+      next.delete(value);
     } else {
-      next.add(opt);
+      next.add(value);
     }
     onChange(next);
   };
 
-  const selectAll = () => onChange(new Set(options));
+  const selectAll = () =>
+    onChange(new Set(options.map((o) => o.value)));
   const clearAll = () => onChange(new Set());
 
   const label = React.useMemo(() => {
-    if (allSelected) return "All classes";
-    if (selected.size === 0) return "Select classes";
+    if (allSelected) return allLabel;
+    if (selected.size === 0) return placeholder;
     const arr = Array.from(selected);
-    if (selected.size === 1) return arr[0];
-    return `${arr[0]}, +${selected.size - 1} more`;
-  }, [allSelected, selected]);
+    const firstLabel =
+      options.find((o) => o.value === arr[0])?.label || arr[0];
+    if (selected.size === 1) return firstLabel;
+    return `${firstLabel}, +${selected.size - 1} more`;
+  }, [allSelected, selected, options, allLabel, placeholder]);
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -56,7 +70,10 @@ export default function ClassMultiSelect({ options, selected, onChange }: ClassM
           {label}
         </button>
       </Popover.Trigger>
-      <Popover.Content align="start" className="p-2 bg-white rounded-md shadow-md border w-64">
+      <Popover.Content
+        align="start"
+        className="p-2 bg-white rounded-md shadow-md border w-64"
+      >
         <div className="flex justify-between items-center px-1 mb-2">
           <button
             type="button"
@@ -82,18 +99,18 @@ export default function ClassMultiSelect({ options, selected, onChange }: ClassM
         />
         <div className="max-h-64 overflow-y-auto flex flex-col gap-1 px-1">
           {filtered.map((opt) => (
-            <label key={opt} className="flex items-center space-x-2">
+            <label key={opt.value} className="flex items-center space-x-2">
               <input
                 type="checkbox"
                 className="h-4 w-4"
-                checked={selected.has(opt)}
-                onChange={() => toggle(opt)}
+                checked={selected.has(opt.value)}
+                onChange={() => toggle(opt.value)}
               />
-              <span className="text-sm">{opt}</span>
+              <span className="text-sm">{opt.label}</span>
             </label>
           ))}
           {filtered.length === 0 && (
-            <span className="text-sm text-gray-500 px-1">No classes found</span>
+            <span className="text-sm text-gray-500 px-1">No options found</span>
           )}
         </div>
       </Popover.Content>
