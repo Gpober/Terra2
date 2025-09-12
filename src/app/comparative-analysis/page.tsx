@@ -17,11 +17,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { 
-  Download, 
-  RefreshCw, 
-  X, 
-  TrendingUp, 
+import RangeCalendar, { RangeValue } from "@/components/ui/RangeCalendar";
+import {
+  Download,
+  RefreshCw,
+  X,
+  TrendingUp,
   TrendingDown, 
   AlertCircle,
   CheckCircle2,
@@ -61,11 +62,8 @@ type Insight = {
 };
 
 export default function EnhancedComparativeAnalysis() {
-  const [mode, setMode] = useState<"period" | "customer">("period");
-  const [startA, setStartA] = useState("");
-  const [endA, setEndA] = useState("");
-  const [startB, setStartB] = useState("");
-  const [endB, setEndB] = useState("");
+  const [rangeA, setRangeA] = useState<RangeValue>({ start: null, end: null });
+  const [rangeB, setRangeB] = useState<RangeValue>({ start: null, end: null });
   const [customerA, setCustomerA] = useState("All Customers");
   const [customerB, setCustomerB] = useState("All Customers");
   const [customers, setCustomers] = useState<string[]>([]);
@@ -94,26 +92,18 @@ export default function EnhancedComparativeAnalysis() {
     fetchCustomers();
   }, []);
 
-  // Update labels when mode or selections change
+  // Update labels when selections change
   useEffect(() => {
-    if (mode === "period") {
-      const formatPeriodLabel = (start: string, end: string) => {
-        if (!start || !end) return "";
-        const startDate = new Date(start);
-        const endDate = new Date(end);
-        if (start === end) {
-          return startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        }
-        return `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-      };
-      
-      setLabelA(formatPeriodLabel(startA, endA) || "Period A");
-      setLabelB(formatPeriodLabel(startB, endB) || "Period B");
-    } else {
-      setLabelA(customerA || "Customer A");
-      setLabelB(customerB || "Customer B");
-    }
-  }, [mode, startA, endA, startB, endB, customerA, customerB]);
+    const formatRange = (r: RangeValue) => {
+      if (!r.start || !r.end) return "";
+      const start = r.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const end = r.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      return start === end ? start : `${start} - ${end}`;
+    };
+
+    setLabelA(`${customerA} ${formatRange(rangeA)}`.trim() || "A");
+    setLabelB(`${customerB} ${formatRange(rangeB)}`.trim() || "B");
+  }, [rangeA, rangeB, customerA, customerB]);
 
   const fetchCustomers = async () => {
     const { data } = await supabase.from("journal_entry_lines").select("customer");
@@ -338,28 +328,17 @@ export default function EnhancedComparativeAnalysis() {
   };
 
   const fetchData = async () => {
-    if (mode === "period" && (!startA || !endA || !startB || !endB)) return;
-    if (mode === "customer" && (!startA || !endA || !customerA || !customerB)) return;
+    if (!rangeA.start || !rangeA.end || !rangeB.start || !rangeB.end) return;
 
     setLoading(true);
     setError(null);
     try {
-      let linesA, linesB;
-      
-      if (mode === "period") {
-        // Period comparison: different time periods, same customer filter
-        [linesA, linesB] = await Promise.all([
-          fetchLines(startA, endA),
-          fetchLines(startB, endB),
-        ]);
-      } else {
-        // Customer comparison: same time period, different customers
-        [linesA, linesB] = await Promise.all([
-          fetchLines(startA, endA, customerA),
-          fetchLines(startA, endA, customerB),
-        ]);
-      }
-      
+      const format = (d: Date) => d.toISOString().split("T")[0];
+      const [linesA, linesB] = await Promise.all([
+        fetchLines(format(rangeA.start), format(rangeA.end), customerA),
+        fetchLines(format(rangeB.start), format(rangeB.end), customerB),
+      ]);
+
       const kpiA = computeKPIs(linesA);
       const kpiB = computeKPIs(linesB);
       setDataA(kpiA);
@@ -460,99 +439,48 @@ export default function EnhancedComparativeAnalysis() {
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Comparative Analysis</h1>
 
-        <div className="flex flex-wrap items-end gap-4">
+        <div className="flex flex-wrap items-start gap-4">
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-700 mb-2">Analysis Type</label>
-            <Select value={mode} onValueChange={(v) => setMode(v as any)}>
+            <label className="text-sm font-medium text-gray-700 mb-2">Customer A</label>
+            <Select value={customerA} onValueChange={(v) => setCustomerA(v)}>
               <SelectTrigger className="w-48 h-11">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="period">Period vs Period</SelectItem>
-                <SelectItem value="customer">Customer vs Customer</SelectItem>
+                {customers.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
 
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-700 mb-2">
-              {mode === "period" ? "Period A Start" : "Date Range Start"}
-            </label>
-            <input
-              type="date"
-              value={startA}
-              onChange={(e) => setStartA(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 h-11 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          
-          <div className="flex flex-col">
-            <label className="text-sm font-medium text-gray-700 mb-2">
-              {mode === "period" ? "Period A End" : "Date Range End"}
-            </label>
-            <input
-              type="date"
-              value={endA}
-              onChange={(e) => setEndA(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 h-11 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
+            <label className="text-sm font-medium text-gray-700 mb-2">Date Range A</label>
+            <RangeCalendar value={rangeA} onChange={setRangeA} />
           </div>
 
-          {mode === "period" ? (
-            <>
-              <div className="flex flex-col">
-                <label className="text-sm font-medium text-gray-700 mb-2">Period B Start</label>
-                <input
-                  type="date"
-                  value={startB}
-                  onChange={(e) => setStartB(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-2 h-11 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div className="flex flex-col">
-                <label className="text-sm font-medium text-gray-700 mb-2">Period B End</label>
-                <input
-                  type="date"
-                  value={endB}
-                  onChange={(e) => setEndB(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-2 h-11 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex flex-col">
-                <label className="text-sm font-medium text-gray-700 mb-2">Customer A</label>
-                <Select value={customerA} onValueChange={(v) => setCustomerA(v)}>
-                  <SelectTrigger className="w-48 h-11">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col">
-                <label className="text-sm font-medium text-gray-700 mb-2">Customer B</label>
-                <Select value={customerB} onValueChange={(v) => setCustomerB(v)}>
-                  <SelectTrigger className="w-48 h-11">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </>
-          )}
+          <div className="flex flex-col">
+            <label className="text-sm font-medium text-gray-700 mb-2">Customer B</label>
+            <Select value={customerB} onValueChange={(v) => setCustomerB(v)}>
+              <SelectTrigger className="w-48 h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {customers.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col">
+            <label className="text-sm font-medium text-gray-700 mb-2">Date Range B</label>
+            <RangeCalendar value={rangeB} onChange={setRangeB} />
+          </div>
 
           <button
             onClick={fetchData}
