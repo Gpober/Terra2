@@ -271,7 +271,7 @@ export default function RangeCalendar({
           let rangeClass = "";
           if (shouldHighlight) {
             rangeClass =
-              "after:absolute after:content-[''] after:-z-10 after:top-0 after:bottom-0 after:bg-[#2E86C1]/20";
+              "after:absolute after:content-[''] after:-z-10 after:top-0 after:bottom-0 after:bg-[#2E86C1] after:opacity-30";
             if (isStart && (range.end || previewEnd) && !(isEnd || isPreviewEnd)) {
               rangeClass += " after:left-1/2 after:right-0";
             } else if ((isEnd || isPreviewEnd) && !isStart) {
