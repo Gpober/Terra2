@@ -479,6 +479,44 @@ export default function FinancialsPage() {
     return null; // Not a P&L account (likely Balance Sheet account)
   };
 
+  // Load available properties for filter dropdown
+  const fetchAvailableProperties = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("journal_entry_lines")
+        .select("class")
+        .not("class", "is", null);
+      if (error) throw error;
+      const classes = new Set<string>();
+      data.forEach((row) => {
+        if (row.class && row.class.trim()) {
+          classes.add(row.class.trim());
+        }
+      });
+      const sorted = Array.from(classes).sort();
+      setAvailableProperties(sorted);
+      setSelectedProperties((prev) => {
+        if (!propertiesInitialized.current) {
+          propertiesInitialized.current = true;
+          return prev.size === 0
+            ? new Set(sorted)
+            : new Set(Array.from(prev).filter((p) => sorted.includes(p)));
+        }
+        if (prev.size === 0) return prev;
+        const next = new Set(
+          Array.from(prev).filter((p) => sorted.includes(p))
+        );
+        return next.size > 0 ? next : new Set(sorted);
+      });
+    } catch (err) {
+      console.error("Error fetching properties:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchAvailableProperties();
+  }, []);
+
   // Fetch P&L data using ENHANCED database strategy with TIMEZONE-INDEPENDENT dates
   const fetchPLData = async () => {
     setIsLoadingData(true);
@@ -574,29 +612,6 @@ export default function FinancialsPage() {
 
       smartLog(`📈 Filtered to ${plTransactions.length} P&L transactions`);
       smartLog(`🔍 Sample P&L transactions:`, plTransactions.slice(0, 5));
-
-      // Get unique classes for filter dropdown using 'class' field
-      const properties = new Set<string>();
-      plTransactions.forEach((tx) => {
-        if (tx.class && tx.class.trim()) {
-          properties.add(tx.class.trim());
-        }
-      });
-      const sorted = Array.from(properties).sort();
-      setAvailableProperties(sorted);
-      setSelectedProperties((prev) => {
-        if (!propertiesInitialized.current) {
-          propertiesInitialized.current = true;
-          return prev.size === 0
-            ? new Set(sorted)
-            : new Set(Array.from(prev).filter((p) => sorted.includes(p)));
-        }
-        if (prev.size === 0) return prev;
-        const next = new Set(
-          Array.from(prev).filter((p) => sorted.includes(p))
-        );
-        return next.size > 0 ? next : new Set(sorted);
-      });
 
       // Process transactions using ENHANCED logic
       const processedAccounts = await processPLTransactionsEnhanced(
