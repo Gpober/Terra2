@@ -1,5 +1,6 @@
 import io
 import os
+import re
 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import StreamingResponse
@@ -17,19 +18,37 @@ if SUPABASE_URL and SUPABASE_KEY:
 
 
 def check_availability(query: str) -> list[dict]:
-    """Lookup reservations in Supabase."""
+    """Lookup reservations in Supabase matching text or date."""
     if not supabase:
         return []
-    response = supabase.table("reservations").select("*").execute()
+
+    table = supabase.table("reservations").select("*")
+
+    date_match = re.search(r"\d{4}-\d{2}-\d{2}", query)
+    if date_match:
+        table = table.eq("date", date_match.group())
+    else:
+        wildcard = f"%{query}%"
+        table = table.or_(
+            "guest_name.ilike.%s,notes.ilike.%s,room.ilike.%s" % (wildcard, wildcard, wildcard)
+        )
+
+    response = table.execute()
     return response.data or []
 
 
 def format_cfo_response(question: str, reservations: list[dict]) -> str:
+    """Format reservation data for the CFO model."""
     if not reservations:
-        return f"No reservations found. You asked: {question}"
-    first = reservations[0]
-    summary = ", ".join(f"{k}: {v}" for k, v in first.items())
-    return f"First reservation -> {summary}. You asked: {question}"
+        return f"No reservations match '{question}'."
+
+    summaries = []
+    for r in reservations:
+        details = ", ".join(f"{k}: {v}" for k, v in r.items())
+        summaries.append(details)
+
+    summary_text = " | ".join(summaries)
+    return f"Reservations -> {summary_text}. Question -> {question}"
 
 
 @app.post("/ask-cfo")

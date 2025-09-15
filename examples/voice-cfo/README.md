@@ -14,8 +14,11 @@ handles reservation questions in a CFO-style voice.
 5. Streams the result as an MP3.
 
 The server connects to a Supabase table named `reservations` to look up
-existing bookings. Supply your Supabase credentials via
-`SUPABASE_URL` and `SUPABASE_KEY` environment variables.
+existing bookings. The `check_availability` helper searches the table by
+date (`YYYY-MM-DD`) or performs a fuzzy text match against `guest_name`,
+`room`, or `notes` columns and forwards any matches to the CFO model for
+summary. Supply your Supabase credentials via `SUPABASE_URL` and
+`SUPABASE_KEY` environment variables.
 
 Start the server:
 
