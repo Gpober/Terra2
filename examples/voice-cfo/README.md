@@ -13,10 +13,16 @@ handles reservation questions in a CFO-style voice.
 4. Converts the text reply back into speech.
 5. Streams the result as an MP3.
 
+The server connects to a Supabase table named `reservations` to look up
+existing bookings. Supply your Supabase credentials via
+`SUPABASE_URL` and `SUPABASE_KEY` environment variables.
+
 Start the server:
 
 ```bash
 pip install -r requirements.txt
+export SUPABASE_URL="https://<project>.supabase.co"
+export SUPABASE_KEY="<your_anon_key>"
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
