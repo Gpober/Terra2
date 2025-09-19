@@ -700,9 +700,11 @@ async function connectToAPI() {
         const allowed = properties.map((p) => p.id);
         if (!propertiesInitialized.current) {
           propertiesInitialized.current = true;
-          return prev.length === 0
-            ? allowed
-            : prev.filter((id) => allowed.includes(id));
+          if (prev.length === 0) {
+            return allowed;
+          }
+          const next = prev.filter((id) => allowed.includes(id));
+          return next.length > 0 ? next : allowed;
         }
         if (prev.length === 0) return prev;
         const next = prev.filter((id) => allowed.includes(id));
