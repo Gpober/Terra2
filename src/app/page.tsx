@@ -1647,6 +1647,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                           <Line
                             type="monotone"
                             dataKey="totalIncome"
+                            name="Total Income"
                             stroke={BRAND_COLORS.tertiary}
                             strokeWidth={2}
                             dot={false}
@@ -1654,6 +1655,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                           <Line
                             type="monotone"
                             dataKey="netIncome"
+                            name="Net Income"
                             stroke={BRAND_COLORS.primary}
                             strokeWidth={2}
                             dot={false}
@@ -1674,9 +1676,10 @@ const processCashFlowTransactions = (transactions: any[]) => {
                           <Legend />
                           <Bar
                             dataKey="totalIncome"
+                            name="Total Income"
                             fill={BRAND_COLORS.tertiary}
                           />
-                          <Bar dataKey="netIncome">
+                          <Bar dataKey="netIncome" name="Net Income">
                             {trendData.map((entry, idx) => (
                               <Cell
                                 key={idx}
@@ -1788,6 +1791,7 @@ const processCashFlowTransactions = (transactions: any[]) => {
                             ))}
                           </Pie>
                           <Tooltip content={<PropertyTooltip />} />
+                          <Legend />
                         </RechartsPieChart>
                       ) : (
                         <BarChart data={propertyChartData}>
@@ -1797,7 +1801,11 @@ const processCashFlowTransactions = (transactions: any[]) => {
                           <Tooltip
                             formatter={(value) => formatCurrency(value as number)}
                           />
-                          <Bar dataKey="value">
+                          <Legend />
+                          <Bar
+                            dataKey="value"
+                            name={metricLabels[propertyChartMetric]}
+                          >
                             {propertyChartData.map((entry, index) => (
                               <Cell
                                 key={`bar-cell-${index}`}
