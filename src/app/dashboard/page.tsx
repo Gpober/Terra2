@@ -1255,25 +1255,29 @@ export default function MobileResponsiveFinancialsPage() {
 
   // Helper functions
   const formatCurrency = (value) => {
+    const numericValue = Number.isFinite(value) ? value : 0
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      maximumFractionDigits: 0,
-    }).format(value)
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(numericValue)
   }
 
   // Compact currency formatting for KPI cards
   const formatCompactCurrency = (value) => {
-    if (Math.abs(value) >= 1000000) {
-      return `${(value / 1000000).toFixed(1)}M`
-    } else if (Math.abs(value) >= 1000) {
-      return `${(value / 1000).toFixed(1)}K`
+    const numericValue = Number.isFinite(value) ? value : 0
+    if (Math.abs(numericValue) >= 1000000) {
+      return `${(numericValue / 1000000).toFixed(2)}M`
+    } else if (Math.abs(numericValue) >= 1000) {
+      return `${(numericValue / 1000).toFixed(2)}K`
     }
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      maximumFractionDigits: 0,
-    }).format(value)
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(numericValue)
   }
 
   const calculatePercentage = (value, total) => {
