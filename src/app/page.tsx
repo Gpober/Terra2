@@ -803,10 +803,7 @@ export default function FinancialOverviewPage() {
       else if (bucket === "financing") financingCashFlow += cashEffect;
     }
 
-    const netCashFlow = cashLines.reduce(
-      (sum, tx) => sum + (toNum(tx.debit) - toNum(tx.credit)),
-      0,
-    );
+    const netCashFlow = operatingCashFlow + investingCashFlow + financingCashFlow;
 
     return { operatingCashFlow, financingCashFlow, investingCashFlow, netCashFlow };
   };
