@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Download, RefreshCw, Plus, X, ChevronDown } from 'lucide-react';
+import { Download, RefreshCw, Plus, X, ChevronDown, Calendar } from 'lucide-react';
 import MultiSelect from '@/components/MultiSelect';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { supabase } from '@/lib/supabaseClient';
@@ -437,8 +437,10 @@ const ReservationsTab: React.FC = () => {
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date(2025, 5, 28));
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
   const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
+  const [timePeriodDropdownOpen, setTimePeriodDropdownOpen] = useState(false);
   const monthDropdownRef = useRef<HTMLDivElement>(null);
   const yearDropdownRef = useRef<HTMLDivElement>(null);
+  const timePeriodDropdownRef = useRef<HTMLDivElement>(null);
   const monthsList = [
     'January',
     'February',
@@ -460,7 +462,7 @@ const ReservationsTab: React.FC = () => {
   const [notification, setNotification] = useState<NotificationState>({ show: false, message: '', type: 'info' });
   const [calendarTooltip, setCalendarTooltip] = useState<TooltipState>({ show: false, content: '', x: 0, y: 0 });
   const [occupancyChartMode, setOccupancyChartMode] = useState<ChartMode>('2025-only');
-  const [revenueChartMode, setRevenueChartMode] = useState<ChartMode>('monthly');
+  const [timePeriod, setTimePeriod] = useState<'Monthly' | 'YTD'>('Monthly');
   const [revenueMetric, setRevenueMetric] = useState<'amount' | 'nights'>('amount');
   const [newReservationForm, setNewReservationForm] = useState<NewReservationForm>({
     guestName: '',
@@ -472,7 +474,7 @@ const ReservationsTab: React.FC = () => {
     totalGuests: '',
     notes: ''
   });
-const [syncing, setSyncing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   
   // Add these new state variables for backend integration
   const [isConnectedToBackend, setIsConnectedToBackend] = useState(false);
@@ -488,6 +490,9 @@ const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      if (timePeriodDropdownRef.current && !timePeriodDropdownRef.current.contains(event.target as Node)) {
+        setTimePeriodDropdownOpen(false);
+      }
       if (monthDropdownRef.current && !monthDropdownRef.current.contains(event.target as Node)) {
         setMonthDropdownOpen(false);
       }
@@ -504,7 +509,7 @@ const [syncing, setSyncing] = useState(false);
     setCurrentCalendarDate(new Date(Number(selectedYear), monthIndex, 1));
   }, [selectedMonth, selectedYear]);
 
-// Use backend data if available, otherwise use demo data
+  // Use backend data if available, otherwise use demo data
   const currentData = backendData ?? {
     properties: [
       {
@@ -1035,7 +1040,7 @@ async function connectToAPI() {
         (sum, { monthIndex, year }) => sum + new Date(year, monthIndex + 1, 0).getDate(),
         0
       );
-      const availableNights = selectedProperties.length * totalDays;
+      const availableNights = selectedPropertySet.size * totalDays;
       return availableNights ? (totalNights / availableNights) * 100 : 0;
     };
 
@@ -1151,7 +1156,7 @@ async function connectToAPI() {
 
   const currentMonthIndex = monthsList.indexOf(selectedMonth);
   const currentYearNumber = Number(selectedYear);
-  const kpiPeriod = revenueChartMode === 'ytd' ? 'ytd' : 'monthly';
+  const kpiPeriod = timePeriod === 'YTD' ? 'ytd' : 'monthly';
 
   const kpis = useMemo(() => {
     if (currentMonthIndex < 0) {
@@ -1162,7 +1167,7 @@ async function connectToAPI() {
       const start = new Date(currentYearNumber, 0, 1);
       const end = new Date(currentYearNumber, currentMonthIndex + 1, 1);
       const reservations = filterReservationsByRange(start, end);
-      return calculateKPIsForRange(reservations, selectedProperties.length, start, end);
+      return calculateKPIsForRange(reservations, selectedPropertySet.size, start, end);
     }
 
     const monthStart = new Date(currentYearNumber, currentMonthIndex, 1);
@@ -1170,14 +1175,14 @@ async function connectToAPI() {
     const reservations = filterReservationsByRange(monthStart, monthEnd);
     return calculateKPIsFromReservations(
       reservations,
-      selectedProperties.length,
+      selectedPropertySet.size,
       currentMonthIndex,
       currentYearNumber
     );
-  }, [currentMonthIndex, currentYearNumber, filterReservationsByRange, kpiPeriod, selectedProperties.length]);
+  }, [currentMonthIndex, currentYearNumber, filterReservationsByRange, kpiPeriod, selectedPropertySet.size]);
 
   const comparisonData = useMemo<KPIComparisonData | null>(() => {
-    if (currentMonthIndex < 0 || selectedProperties.length === 0) {
+    if (currentMonthIndex < 0 || selectedPropertySet.size === 0) {
       return null;
     }
 
@@ -1186,7 +1191,7 @@ async function connectToAPI() {
       const start = new Date(previousYear, 0, 1);
       const end = new Date(previousYear, currentMonthIndex + 1, 1);
       const reservations = filterReservationsByRange(start, end);
-      const previous = calculateKPIsForRange(reservations, selectedProperties.length, start, end);
+      const previous = calculateKPIsForRange(reservations, selectedPropertySet.size, start, end);
       return { label: 'vs prior YTD', previous };
     }
 
@@ -1197,12 +1202,12 @@ async function connectToAPI() {
     const reservations = filterReservationsByRange(start, end);
     const previous = calculateKPIsFromReservations(
       reservations,
-      selectedProperties.length,
+      selectedPropertySet.size,
       prevMonthIndex,
       prevYear
     );
     return { label: 'vs last month', previous };
-  }, [currentMonthIndex, currentYearNumber, filterReservationsByRange, kpiPeriod, selectedProperties.length]);
+  }, [currentMonthIndex, currentYearNumber, filterReservationsByRange, kpiPeriod, selectedPropertySet.size]);
 
   const kpiComparisons = useMemo<KPIComparisonResult | null>(() => {
     if (!comparisonData) return null;
@@ -1278,11 +1283,39 @@ async function connectToAPI() {
           {/* Controls */}
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
             <div className="flex flex-wrap gap-4 items-center">
+              <div className="relative" ref={timePeriodDropdownRef}>
+                <button
+                  onClick={() => setTimePeriodDropdownOpen(!timePeriodDropdownOpen)}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                  style={{ '--tw-ring-color': `${BRAND_COLORS.primary}33` } as React.CSSProperties}
+                >
+                  <Calendar className="w-4 h-4 mr-2" />
+                  {timePeriod}
+                  <ChevronDown className="w-4 h-4 ml-2" />
+                </button>
+                {timePeriodDropdownOpen && (
+                  <div className="absolute z-10 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg">
+                    {(['Monthly', 'YTD'] as const).map((period) => (
+                      <button
+                        key={period}
+                        onClick={() => {
+                          setTimePeriod(period);
+                          setTimePeriodDropdownOpen(false);
+                        }}
+                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                      >
+                        {period}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="relative" ref={monthDropdownRef}>
                 <button
                   onClick={() => setMonthDropdownOpen(!monthDropdownOpen)}
                   className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
-                  style={{ '--tw-ring-color': `${BRAND_COLORS.secondary}33` } as React.CSSProperties}
+                  style={{ '--tw-ring-color': `${BRAND_COLORS.primary}33` } as React.CSSProperties}
                 >
                   {selectedMonth}
                   <ChevronDown className="w-4 h-4 ml-2" />
@@ -1309,7 +1342,7 @@ async function connectToAPI() {
                 <button
                   onClick={() => setYearDropdownOpen(!yearDropdownOpen)}
                   className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
-                  style={{ '--tw-ring-color': `${BRAND_COLORS.secondary}33` } as React.CSSProperties}
+                  style={{ '--tw-ring-color': `${BRAND_COLORS.primary}33` } as React.CSSProperties}
                 >
                   {selectedYear}
                   <ChevronDown className="w-4 h-4 ml-2" />
@@ -1342,16 +1375,6 @@ async function connectToAPI() {
                 placeholder="Select properties"
                 allLabel="All properties"
               />
-
-              <select
-                value={currentView}
-                onChange={(e) => setCurrentView(e.target.value as ChartMode)}
-                className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-500 focus:outline-none focus:ring-2 transition-all"
-                style={{ '--tw-ring-color': `${BRAND_COLORS.secondary}33` } as React.CSSProperties}
-              >
-                <option value="monthly">Monthly View</option>
-                <option value="seasonal">Seasonal View</option>
-              </select>
 
               <button
                 onClick={() => showNotification('Reservations exported', 'success')}
@@ -1444,26 +1467,26 @@ async function connectToAPI() {
                       </div>
                       <div className="flex gap-2 ml-4">
                         <button
-                          onClick={() => setRevenueChartMode('monthly')}
+                          onClick={() => setCurrentView('monthly')}
                           className={`px-3 py-1 text-xs rounded transition-colors ${
-                            revenueChartMode === 'monthly'
+                            currentView === 'monthly'
                               ? 'text-white'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
-                          style={{ backgroundColor: revenueChartMode === 'monthly' ? BRAND_COLORS.primary : undefined }}
+                          style={{ backgroundColor: currentView === 'monthly' ? BRAND_COLORS.primary : undefined }}
                         >
                           Monthly
                         </button>
                         <button
-                          onClick={() => setRevenueChartMode('ytd')}
+                          onClick={() => setCurrentView('seasonal')}
                           className={`px-3 py-1 text-xs rounded transition-colors ${
-                            revenueChartMode === 'ytd'
+                            currentView === 'seasonal'
                               ? 'text-white'
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
-                          style={{ backgroundColor: revenueChartMode === 'ytd' ? BRAND_COLORS.primary : undefined }}
+                          style={{ backgroundColor: currentView === 'seasonal' ? BRAND_COLORS.primary : undefined }}
                         >
-                          YTD
+                          Seasonal
                         </button>
                       </div>
                     </div>
