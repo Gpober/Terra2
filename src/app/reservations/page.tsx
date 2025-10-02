@@ -1336,75 +1336,6 @@ async function connectToAPI() {
                 </div>
               </div>
 
-              {/* Reservations Table */}
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-gray-200">
-                  <h3 className="text-xl font-semibold text-gray-900">Upcoming Reservations</h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Guest</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Property</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check-in</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nights</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {getFilteredReservations().map((reservation) => (
-                        <tr key={reservation.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {reservation.guest}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {reservation.property}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatDate(reservation.checkin)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {reservation.nights}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatCurrency(reservation.revenue)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                              reservation.status === 'confirmed' 
-                                ? 'bg-green-100 text-green-800'
-                                : reservation.status === 'pending'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}>
-                              {reservation.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <button
-                              onClick={() => showNotification(`Viewing reservation for ${reservation.guest}`, 'info')}
-                              className="hover:text-gray-900 mr-3"
-                              style={{ color: BRAND_COLORS.primary }}
-                            >
-                              View
-                            </button>
-                            <button
-                              onClick={() => showNotification(`Editing reservation for ${reservation.guest}`, 'info')}
-                              className="text-gray-600 hover:text-gray-900"
-                            >
-                              Edit
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
               {/* Occupancy Trend Chart */}
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-gray-200">
@@ -1480,6 +1411,75 @@ async function connectToAPI() {
                       )}
                     </LineChart>
                   </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Reservations Table */}
+              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-200">
+                  <h3 className="text-xl font-semibold text-gray-900">Upcoming Reservations</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Guest</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Property</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check-in</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nights</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {getFilteredReservations().map((reservation) => (
+                        <tr key={reservation.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {reservation.guest}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {reservation.property}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatDate(reservation.checkin)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {reservation.nights}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrency(reservation.revenue)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                              reservation.status === 'confirmed'
+                                ? 'bg-green-100 text-green-800'
+                                : reservation.status === 'pending'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {reservation.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <button
+                              onClick={() => showNotification(`Viewing reservation for ${reservation.guest}`, 'info')}
+                              className="hover:text-gray-900 mr-3"
+                              style={{ color: BRAND_COLORS.primary }}
+                            >
+                              View
+                            </button>
+                            <button
+                              onClick={() => showNotification(`Editing reservation for ${reservation.guest}`, 'info')}
+                              className="text-gray-600 hover:text-gray-900"
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
