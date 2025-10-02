@@ -134,7 +134,7 @@ type NewReservationForm = {
   notes: string;
 };
 
-type ChartMode = 'monthly' | 'seasonal' | 'ytd' | '2025-only' | 'comparison';
+type ChartMode = 'monthly' | 'seasonal' | 'ytd' | 'current-only' | 'comparison';
 
 // Helpers
 const slugify = (qbo_listing: string): string =>
@@ -461,7 +461,7 @@ const ReservationsTab: React.FC = () => {
   const [newReservationModalOpen, setNewReservationModalOpen] = useState(false);
   const [notification, setNotification] = useState<NotificationState>({ show: false, message: '', type: 'info' });
   const [calendarTooltip, setCalendarTooltip] = useState<TooltipState>({ show: false, content: '', x: 0, y: 0 });
-  const [occupancyChartMode, setOccupancyChartMode] = useState<ChartMode>('2025-only');
+  const [occupancyChartMode, setOccupancyChartMode] = useState<ChartMode>('current-only');
   const [timePeriod, setTimePeriod] = useState<'Monthly' | 'YTD'>('Monthly');
   const [revenueMetric, setRevenueMetric] = useState<'amount' | 'nights'>('amount');
   const [newReservationForm, setNewReservationForm] = useState<NewReservationForm>({
@@ -1070,7 +1070,7 @@ async function connectToAPI() {
         ]
       };
       return seasons.map(season => {
-        if (occupancyChartMode === '2025-only') {
+        if (occupancyChartMode === 'current-only') {
           const occupancy = calcRate(seasonMonths[season]);
           return { month: season, occupancy };
         } else {
@@ -1090,7 +1090,7 @@ async function connectToAPI() {
         monthsList.indexOf(selectedMonth),
         Number(selectedYear)
       );
-      if (occupancyChartMode === '2025-only') {
+      if (occupancyChartMode === 'current-only') {
         return months.map(m => {
           const occupancy = calcRate([{ monthIndex: m.monthIndex, year: m.year }]);
           return { month: m.label, occupancy };
@@ -1156,6 +1156,9 @@ async function connectToAPI() {
 
   const currentMonthIndex = monthsList.indexOf(selectedMonth);
   const currentYearNumber = Number(selectedYear);
+  const previousYearNumber = currentYearNumber - 1;
+  const currentYearLabel = currentYearNumber.toString();
+  const previousYearLabel = previousYearNumber.toString();
   const kpiPeriod = timePeriod === 'YTD' ? 'ytd' : 'monthly';
 
   const kpis = useMemo(() => {
@@ -1531,15 +1534,15 @@ async function connectToAPI() {
                     </h3>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => setOccupancyChartMode('2025-only')}
+                        onClick={() => setOccupancyChartMode('current-only')}
                         className={`px-3 py-1 text-xs rounded transition-colors ${
-                          occupancyChartMode === '2025-only' 
-                            ? 'text-white' 
+                          occupancyChartMode === 'current-only'
+                            ? 'text-white'
                             : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                         }`}
-                        style={{ backgroundColor: occupancyChartMode === '2025-only' ? BRAND_COLORS.primary : undefined }}
+                        style={{ backgroundColor: occupancyChartMode === 'current-only' ? BRAND_COLORS.primary : undefined }}
                       >
-                        2025 Only
+                        {currentYearLabel} Only
                       </button>
                       <button
                         onClick={() => setOccupancyChartMode('comparison')}
@@ -1550,7 +1553,7 @@ async function connectToAPI() {
                         }`}
                         style={{ backgroundColor: occupancyChartMode === 'comparison' ? BRAND_COLORS.primary : undefined }}
                       >
-                        Compare 2024 vs 2025
+                        Compare {previousYearLabel} vs {currentYearLabel}
                       </button>
                     </div>
                   </div>
@@ -1563,11 +1566,11 @@ async function connectToAPI() {
                       <YAxis domain={[0, 100]} tickFormatter={(value) => `${value.toFixed(1)}%`} />
                       <Tooltip formatter={(value: number) => [`${value.toFixed(1)}%`, 'Occupancy']} />
                       <Legend />
-                      {occupancyChartMode === '2025-only' ? (
+                      {occupancyChartMode === 'current-only' ? (
                         <Line
                           type="monotone"
                           dataKey="occupancy"
-                          name="2025"
+                          name={currentYearLabel}
                           stroke={BRAND_COLORS.primary}
                           strokeWidth={3}
                           dot={{ r: 6, fill: BRAND_COLORS.primary }}
@@ -1577,8 +1580,8 @@ async function connectToAPI() {
                         <>
                           <Line
                             type="monotone"
-                            dataKey="2024"
-                            name="2024"
+                            dataKey={previousYearLabel}
+                            name={previousYearLabel}
                             stroke={BRAND_COLORS.chart.comparison2024}
                             strokeWidth={2}
                             strokeDasharray="5 5"
@@ -1586,8 +1589,8 @@ async function connectToAPI() {
                           />
                           <Line
                             type="monotone"
-                            dataKey="2025"
-                            name="2025"
+                            dataKey={currentYearLabel}
+                            name={currentYearLabel}
                             stroke={BRAND_COLORS.chart.comparison2025}
                             strokeWidth={3}
                             dot={{ r: 6, fill: BRAND_COLORS.chart.comparison2025 }}
