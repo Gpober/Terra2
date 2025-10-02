@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Download, RefreshCw, Plus, X, ChevronDown } from 'lucide-react';
 import MultiSelect from '@/components/MultiSelect';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
@@ -149,25 +149,49 @@ const getNightsInMonth = (
   return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
 };
 
-  const calculateKPIsFromReservations = (
-    reservations: Reservation[],
-    propertyCount: number,
-    monthIndex: number,
-    year: number
-  ): KPIs => {
+const getNightsInRange = (
+  checkIn: string,
+  checkOut: string,
+  rangeStart: Date,
+  rangeEnd: Date
+): number => {
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+  const effectiveStart = start > rangeStart ? start : rangeStart;
+  const effectiveEnd = end < rangeEnd ? end : rangeEnd;
+  const diff = effectiveEnd.getTime() - effectiveStart.getTime();
+  return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
+};
+
+const calculateKPIsForPeriod = (
+  reservations: Reservation[],
+  propertyCount: number,
+  rangeStart: Date,
+  rangeEnd: Date
+): KPIs => {
   const totalRevenue = reservations.reduce((sum, r) => sum + r.revenue, 0);
   const totalNights = reservations.reduce(
-    (sum, r) => sum + getNightsInMonth(r.checkin, r.checkout, monthIndex, year),
+    (sum, r) => sum + getNightsInRange(r.checkin, r.checkout, rangeStart, rangeEnd),
     0
   );
   const avgNightlyRate = totalNights ? totalRevenue / totalNights : 0;
   const avgStayLength = reservations.length ? totalNights / reservations.length : 0;
-  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-  const availableNights = propertyCount * daysInMonth;
-  const occupancyRate = availableNights
-    ? Math.round((totalNights / availableNights) * 100)
-    : 0;
+  const totalDays = (rangeEnd.getTime() - rangeStart.getTime()) / (1000 * 60 * 60 * 24);
+  const availableNights = propertyCount * totalDays;
+  const occupancyRate = availableNights ? (totalNights / availableNights) * 100 : 0;
+
   return { totalRevenue, avgNightlyRate, avgStayLength, occupancyRate };
+};
+
+const calculateKPIsFromReservations = (
+  reservations: Reservation[],
+  propertyCount: number,
+  monthIndex: number,
+  year: number
+): KPIs => {
+  const monthStart = new Date(year, monthIndex, 1);
+  const monthEnd = new Date(year, monthIndex + 1, 1);
+  return calculateKPIsForPeriod(reservations, propertyCount, monthStart, monthEnd);
 };
 
 
@@ -394,6 +418,7 @@ const ReservationsTab: React.FC = () => {
   const [occupancyChartMode, setOccupancyChartMode] = useState<ChartMode>('2025-only');
   const [revenueChartMode, setRevenueChartMode] = useState<ChartMode>('monthly');
   const [revenueMetric, setRevenueMetric] = useState<'amount' | 'nights'>('amount');
+  const [revenueView, setRevenueView] = useState<'portfolio' | 'property'>('portfolio');
   const [newReservationForm, setNewReservationForm] = useState<NewReservationForm>({
     guestName: '',
     guestEmail: '',
@@ -404,7 +429,7 @@ const ReservationsTab: React.FC = () => {
     totalGuests: '',
     notes: ''
   });
-const [syncing, setSyncing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   
   // Add these new state variables for backend integration
   const [isConnectedToBackend, setIsConnectedToBackend] = useState(false);
@@ -600,33 +625,55 @@ async function connectToAPI() {
     }, 3000);
   };
 
+  const selectedPropertyDetails = useMemo(
+    () =>
+      selectedProperties
+        .map((id) => currentData.properties.find((p) => p.id === id))
+        .filter((property): property is Property => Boolean(property)),
+    [currentData.properties, selectedProperties]
+  );
+
+  const selectedPropertyNames = useMemo(
+    () => selectedPropertyDetails.map((property) => property.name),
+    [selectedPropertyDetails]
+  );
+
+  const reservationsForSelectedProperties = useMemo(
+    () =>
+      currentData.reservations.filter((reservation) =>
+        selectedPropertyNames.includes(reservation.property)
+      ),
+    [currentData.reservations, selectedPropertyNames]
+  );
+
   const getPropertyColor = (propertyName: string): string => {
-    const property = currentData.properties.find(p => p.name === propertyName);
+    const property = currentData.properties.find((p) => p.name === propertyName);
     return property ? property.color : BRAND_COLORS.primary;
   };
 
   const getPropertyId = (propertyName: string): string => {
-    const property = currentData.properties.find(p => p.name === propertyName);
+    const property = currentData.properties.find((p) => p.name === propertyName);
     return property ? property.id : slugify(propertyName);
   };
 
-
   const getFilteredReservations = (): Reservation[] => {
-    const selectedPropertyNames = selectedProperties
-      .map(id => currentData.properties.find(p => p.id === id)?.name)
-      .filter(Boolean) as string[];
-
     const monthIndex = monthsList.indexOf(selectedMonth);
     const year = Number(selectedYear);
     const monthStart = new Date(year, monthIndex, 1);
     const monthEnd = new Date(year, monthIndex + 1, 1);
 
-    return currentData.reservations.filter(r => {
-      const propertyMatch = selectedPropertyNames.includes(r.property);
-      const checkinDate = new Date(r.checkin);
-      const checkoutDate = new Date(r.checkout);
-      const overlaps = checkinDate < monthEnd && checkoutDate > monthStart;
-      return propertyMatch && overlaps;
+    return reservationsForSelectedProperties.filter((reservation) => {
+      const checkIn = new Date(reservation.checkin);
+      const checkOut = new Date(reservation.checkout);
+      return checkIn < monthEnd && checkOut > monthStart;
+    });
+  };
+
+  const filterReservationsByRange = (start: Date, end: Date): Reservation[] => {
+    return reservationsForSelectedProperties.filter((reservation) => {
+      const checkIn = new Date(reservation.checkin);
+      const checkOut = new Date(reservation.checkout);
+      return checkIn < end && checkOut > start;
     });
   };
   // Backend data loading function
@@ -719,16 +766,6 @@ async function connectToAPI() {
     }
   };
   
-  const calculateDemoKPIs = (): KPIs => {
-    const filteredReservations = getFilteredReservations();
-    return calculateKPIsFromReservations(
-      filteredReservations,
-      selectedProperties.length,
-      monthsList.indexOf(selectedMonth),
-      Number(selectedYear)
-    );
-  };
-
   const generateCalendar = (): { monthName: string; days: CalendarDay[] } => {
     const year = currentCalendarDate.getFullYear();
     const month = currentCalendarDate.getMonth();
@@ -1030,9 +1067,10 @@ async function connectToAPI() {
   };
 
   const generateRevenueChartData = () => {
-    const selectedPropertyNames = selectedProperties
-      .map(id => currentData.properties.find(p => p.id === id)?.name)
-      .filter(Boolean) as string[];
+    if (selectedPropertyDetails.length === 0) {
+      return [];
+    }
+
     if (currentView === 'seasonal') {
       const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
       const seasonMonths: Record<string, number[]> = {
@@ -1042,46 +1080,195 @@ async function connectToAPI() {
         Fall: [8, 9, 10]
       };
       return seasons.map((season) => {
-        const total = currentData.reservations
-          .filter(r => selectedPropertyNames.includes(r.property))
-          .filter(r => seasonMonths[season].includes(new Date(r.checkin).getMonth()))
-          .reduce((sum, r) => {
-            return revenueMetric === 'amount'
-              ? sum + r.revenue
-              : sum + toNights(r.checkin, r.checkout);
-          }, 0);
+        if (revenueView === 'property') {
+          const entry: Record<string, string | number> = { month: season };
+          selectedPropertyDetails.forEach((property) => {
+            const total = currentData.reservations
+              .filter((reservation) => reservation.property === property.name)
+              .filter((reservation) =>
+                seasonMonths[season].includes(new Date(reservation.checkin).getMonth())
+              )
+              .reduce((sum, reservation) =>
+                revenueMetric === 'amount'
+                  ? sum + reservation.revenue
+                  : sum + toNights(reservation.checkin, reservation.checkout),
+              0);
+            entry[property.id] = total;
+          });
+          return entry;
+        }
+
+        const total = reservationsForSelectedProperties
+          .filter((reservation) =>
+            seasonMonths[season].includes(new Date(reservation.checkin).getMonth())
+          )
+          .reduce((sum, reservation) =>
+            revenueMetric === 'amount'
+              ? sum + reservation.revenue
+              : sum + toNights(reservation.checkin, reservation.checkout),
+          0);
         return { month: season, value: total };
       });
-    } else {
-      const months = getRolling12Months(
-        monthsList.indexOf(selectedMonth),
-        Number(selectedYear)
-      );
-      return months.map(({ label, monthIndex, year }) => {
-        const total = currentData.reservations
-          .filter(r => selectedPropertyNames.includes(r.property))
-          .filter(r => {
-            const d = new Date(r.checkin);
-            return d.getMonth() === monthIndex && d.getFullYear() === year;
-          })
-          .reduce((sum, r) => {
-            return revenueMetric === 'amount'
-              ? sum + r.revenue
-              : sum + getNightsInMonth(r.checkin, r.checkout, monthIndex, year);
-          }, 0);
+    }
+
+    const monthIndex = monthsList.indexOf(selectedMonth);
+    const year = Number(selectedYear);
+
+    if (revenueChartMode === 'ytd') {
+      const ranges = [
+        {
+          label: `YTD ${year - 1}`,
+          start: new Date(year - 1, 0, 1),
+          end: new Date(year - 1, monthIndex + 1, 1)
+        },
+        {
+          label: `YTD ${year}`,
+          start: new Date(year, 0, 1),
+          end: new Date(year, monthIndex + 1, 1)
+        }
+      ];
+
+      return ranges.map(({ label, start, end }) => {
+        if (revenueView === 'property') {
+          const entry: Record<string, string | number> = { month: label };
+          selectedPropertyDetails.forEach((property) => {
+            const total = currentData.reservations
+              .filter((reservation) => reservation.property === property.name)
+              .filter((reservation) => {
+                const checkIn = new Date(reservation.checkin);
+                const checkOut = new Date(reservation.checkout);
+                return checkIn < end && checkOut > start;
+              })
+              .reduce((sum, reservation) =>
+                revenueMetric === 'amount'
+                  ? sum + reservation.revenue
+                  : sum + getNightsInRange(reservation.checkin, reservation.checkout, start, end),
+              0);
+            entry[property.id] = total;
+          });
+          return entry;
+        }
+
+        const total = filterReservationsByRange(start, end).reduce((sum, reservation) =>
+          revenueMetric === 'amount'
+            ? sum + reservation.revenue
+            : sum + getNightsInRange(reservation.checkin, reservation.checkout, start, end),
+        0);
+
         return { month: label, value: total };
       });
     }
+
+    const months = getRolling12Months(monthIndex, year);
+    return months.map(({ label, monthIndex: mIndex, year: mYear }) => {
+      if (revenueView === 'property') {
+        const entry: Record<string, string | number> = { month: label };
+        selectedPropertyDetails.forEach((property) => {
+          const total = currentData.reservations
+            .filter((reservation) => reservation.property === property.name)
+            .filter((reservation) => {
+              const date = new Date(reservation.checkin);
+              return date.getMonth() === mIndex && date.getFullYear() === mYear;
+            })
+            .reduce((sum, reservation) =>
+              revenueMetric === 'amount'
+                ? sum + reservation.revenue
+                : sum + getNightsInMonth(reservation.checkin, reservation.checkout, mIndex, mYear),
+            0);
+          entry[property.id] = total;
+        });
+        return entry;
+      }
+
+      const total = filterReservationsByRange(
+        new Date(mYear, mIndex, 1),
+        new Date(mYear, mIndex + 1, 1)
+      ).reduce((sum, reservation) =>
+        revenueMetric === 'amount'
+          ? sum + reservation.revenue
+          : sum + getNightsInMonth(reservation.checkin, reservation.checkout, mIndex, mYear),
+      0);
+
+      return { month: label, value: total };
+    });
   };
 
-  const kpis = backendData
-    ? calculateKPIsFromReservations(
-        getFilteredReservations(),
-        selectedProperties.length,
-        monthsList.indexOf(selectedMonth),
-        Number(selectedYear)
-      )
-    : calculateDemoKPIs();
+  const monthIndex = monthsList.indexOf(selectedMonth);
+  const year = Number(selectedYear);
+  const previousMonthIndex = (monthIndex + 11) % 12;
+  const previousMonthYear = monthIndex === 0 ? year - 1 : year;
+
+  const currentRangeStart = revenueChartMode === 'ytd'
+    ? new Date(year, 0, 1)
+    : new Date(year, monthIndex, 1);
+  const currentRangeEnd = new Date(year, monthIndex + 1, 1);
+
+  const previousRangeStart = revenueChartMode === 'ytd'
+    ? new Date(year - 1, 0, 1)
+    : new Date(previousMonthYear, previousMonthIndex, 1);
+  const previousRangeEnd = revenueChartMode === 'ytd'
+    ? new Date(year - 1, monthIndex + 1, 1)
+    : new Date(previousMonthYear, previousMonthIndex + 1, 1);
+
+  const comparisonLabel = revenueChartMode === 'ytd'
+    ? `vs YTD ${previousRangeStart.getFullYear()}`
+    : `vs ${monthsList[previousMonthIndex]} ${previousMonthYear}`;
+
+  const currentPeriodReservations = filterReservationsByRange(currentRangeStart, currentRangeEnd);
+  const previousPeriodReservations = filterReservationsByRange(previousRangeStart, previousRangeEnd);
+  const propertyCount = selectedPropertyDetails.length || selectedProperties.length;
+
+  const kpis = calculateKPIsForPeriod(
+    currentPeriodReservations,
+    propertyCount,
+    currentRangeStart,
+    currentRangeEnd
+  );
+  const previousKpis = calculateKPIsForPeriod(
+    previousPeriodReservations,
+    propertyCount,
+    previousRangeStart,
+    previousRangeEnd
+  );
+
+  const getPercentChange = (currentValue: number, previousValue: number): number | null => {
+    if (previousValue === 0) {
+      return currentValue === 0 ? 0 : null;
+    }
+    return ((currentValue - previousValue) / Math.abs(previousValue)) * 100;
+  };
+
+  const kpiChanges = {
+    totalRevenue: getPercentChange(kpis.totalRevenue, previousKpis.totalRevenue),
+    avgNightlyRate: getPercentChange(kpis.avgNightlyRate, previousKpis.avgNightlyRate),
+    avgStayLength: getPercentChange(kpis.avgStayLength, previousKpis.avgStayLength),
+    occupancyRate: getPercentChange(kpis.occupancyRate, previousKpis.occupancyRate)
+  } as const;
+
+  const getChangeDisplay = (change: number | null) => {
+    if (change === null) {
+      return {
+        text: 'No prior data',
+        className: 'bg-gray-100 text-gray-600'
+      };
+    }
+
+    const rounded = Number.isFinite(change) ? change : 0;
+    const text = `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)}% ${comparisonLabel}`;
+    const className = rounded > 0
+      ? 'bg-green-100 text-green-800'
+      : rounded < 0
+        ? 'bg-red-100 text-red-800'
+        : 'bg-gray-100 text-gray-600';
+
+    return { text, className };
+  };
+
+  const revenueChange = getChangeDisplay(kpiChanges.totalRevenue);
+  const occupancyChange = getChangeDisplay(kpiChanges.occupancyRate);
+  const avgNightlyRateChange = getChangeDisplay(kpiChanges.avgNightlyRate);
+  const avgStayLengthChange = getChangeDisplay(kpiChanges.avgStayLength);
+
   const calendar = generateCalendar();
 
   return (
@@ -1216,29 +1403,29 @@ async function connectToAPI() {
             <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 hover:shadow-md transition-shadow" style={{ borderLeftColor: BRAND_COLORS.primary }}>
               <div className="text-gray-600 text-sm font-medium mb-2">Total Revenue</div>
               <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(kpis.totalRevenue)}</div>
-              <div className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full inline-block">
-                +8.3% vs last month
+              <div className={`text-xs px-2 py-1 rounded-full inline-block ${revenueChange.className}`}>
+                {revenueChange.text}
               </div>
             </div>
             <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 hover:shadow-md transition-shadow" style={{ borderLeftColor: BRAND_COLORS.secondary }}>
               <div className="text-gray-600 text-sm font-medium mb-2">Occupancy Rate</div>
-              <div className="text-3xl font-bold text-gray-900 mb-1">{kpis.occupancyRate}%</div>
-              <div className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full inline-block">
-                +4.2% vs last month
+              <div className="text-3xl font-bold text-gray-900 mb-1">{kpis.occupancyRate.toFixed(1)}%</div>
+              <div className={`text-xs px-2 py-1 rounded-full inline-block ${occupancyChange.className}`}>
+                {occupancyChange.text}
               </div>
             </div>
             <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 hover:shadow-md transition-shadow" style={{ borderLeftColor: BRAND_COLORS.tertiary }}>
               <div className="text-gray-600 text-sm font-medium mb-2">Avg Nightly Rate</div>
               <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(kpis.avgNightlyRate)}</div>
-              <div className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full inline-block">
-                +2.1% vs last month
+              <div className={`text-xs px-2 py-1 rounded-full inline-block ${avgNightlyRateChange.className}`}>
+                {avgNightlyRateChange.text}
               </div>
             </div>
             <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 hover:shadow-md transition-shadow" style={{ borderLeftColor: BRAND_COLORS.warning }}>
               <div className="text-gray-600 text-sm font-medium mb-2">Avg Stay Length</div>
               <div className="text-3xl font-bold text-gray-900 mb-1">{kpis.avgStayLength.toFixed(1)} nights</div>
-              <div className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full inline-block">
-                +0.2 vs last month
+              <div className={`text-xs px-2 py-1 rounded-full inline-block ${avgStayLengthChange.className}`}>
+                {avgStayLengthChange.text}
               </div>
             </div>
           </div>
@@ -1250,11 +1437,11 @@ async function connectToAPI() {
               {/* Revenue / Days Booked Chart */}
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-gray-200">
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <h3 className="text-xl font-semibold text-gray-900">
                       {revenueMetric === 'amount' ? 'Total Revenue' : 'Days Booked'}
                     </h3>
-                    <div className="flex gap-2 items-center">
+                    <div className="flex flex-wrap gap-3 items-center justify-end">
                       <div className="flex gap-2">
                         <button
                           onClick={() => setRevenueMetric('amount')}
@@ -1279,7 +1466,7 @@ async function connectToAPI() {
                           Days Booked
                         </button>
                       </div>
-                      <div className="flex gap-2 ml-4">
+                      <div className="flex gap-2">
                         <button
                           onClick={() => setRevenueChartMode('monthly')}
                           className={`px-3 py-1 text-xs rounded transition-colors ${
@@ -1301,6 +1488,30 @@ async function connectToAPI() {
                           style={{ backgroundColor: revenueChartMode === 'ytd' ? BRAND_COLORS.primary : undefined }}
                         >
                           YTD
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setRevenueView('portfolio')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            revenueView === 'portfolio'
+                              ? 'text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          style={{ backgroundColor: revenueView === 'portfolio' ? BRAND_COLORS.primary : undefined }}
+                        >
+                          Portfolio Total
+                        </button>
+                        <button
+                          onClick={() => setRevenueView('property')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            revenueView === 'property'
+                              ? 'text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          style={{ backgroundColor: revenueView === 'property' ? BRAND_COLORS.primary : undefined }}
+                        >
+                          By Property
                         </button>
                       </div>
                     </div>
@@ -1325,12 +1536,24 @@ async function connectToAPI() {
                         ]}
                       />
                       <Legend />
-                      <Bar
-                        dataKey="value"
-                        name={revenueMetric === 'amount' ? 'Revenue' : 'Days Booked'}
-                        fill={BRAND_COLORS.primary}
-                        radius={[4, 4, 0, 0]}
-                      />
+                      {revenueView === 'property'
+                        ? selectedPropertyDetails.map((property) => (
+                            <Bar
+                              key={property.id}
+                              dataKey={property.id}
+                              name={property.name}
+                              fill={property.color}
+                              radius={[4, 4, 0, 0]}
+                            />
+                          ))
+                        : (
+                            <Bar
+                              dataKey="value"
+                              name={revenueMetric === 'amount' ? 'Revenue' : 'Days Booked'}
+                              fill={BRAND_COLORS.primary}
+                              radius={[4, 4, 0, 0]}
+                            />
+                          )}
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1483,6 +1706,75 @@ async function connectToAPI() {
                 </div>
               </div>
             </div>
+
+              {/* Reservations Table */}
+              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-200">
+                  <h3 className="text-xl font-semibold text-gray-900">Upcoming Reservations</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Guest</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Property</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check-in</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nights</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {getFilteredReservations().map((reservation) => (
+                        <tr key={reservation.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {reservation.guest}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {reservation.property}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatDate(reservation.checkin)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {reservation.nights}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrency(reservation.revenue)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                              reservation.status === 'confirmed' 
+                                ? 'bg-green-100 text-green-800'
+                                : reservation.status === 'pending'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {reservation.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <button
+                              onClick={() => showNotification(`Viewing reservation for ${reservation.guest}`, 'info')}
+                              className="hover:text-gray-900 mr-3"
+                              style={{ color: BRAND_COLORS.primary }}
+                            >
+                              View
+                            </button>
+                            <button
+                              onClick={() => showNotification(`Editing reservation for ${reservation.guest}`, 'info')}
+                              className="text-gray-600 hover:text-gray-900"
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
             {/* Right Column: Calendar and Revenue Reconciliation */}
             <div className="space-y-8">
