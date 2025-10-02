@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Download, RefreshCw, Plus, X, ChevronDown } from 'lucide-react';
 import MultiSelect from '@/components/MultiSelect';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
@@ -81,6 +81,21 @@ type KPIs = {
   occupancyRate: number;
 };
 
+type KPIComparisonData = {
+  label: string;
+  previous: KPIs;
+};
+
+type KPIComparisonResult = {
+  label: string;
+  metrics: {
+    totalRevenue: number | null;
+    avgNightlyRate: number | null;
+    avgStayLength: number | null;
+    occupancyRate: number | null;
+  };
+};
+
 type DBReservationRow = {
   id: string;
   check_in: string | null;
@@ -149,6 +164,20 @@ const getNightsInMonth = (
   return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
 };
 
+const getNightsInRange = (
+  checkIn: string,
+  checkOut: string,
+  startDate: Date,
+  endDate: Date
+): number => {
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+  const effectiveStart = start > startDate ? start : startDate;
+  const effectiveEnd = end < endDate ? end : endDate;
+  const diff = effectiveEnd.getTime() - effectiveStart.getTime();
+  return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
+};
+
   const calculateKPIsFromReservations = (
     reservations: Reservation[],
     propertyCount: number,
@@ -168,6 +197,45 @@ const getNightsInMonth = (
     ? Math.round((totalNights / availableNights) * 100)
     : 0;
   return { totalRevenue, avgNightlyRate, avgStayLength, occupancyRate };
+};
+
+const EMPTY_KPIS: KPIs = {
+  totalRevenue: 0,
+  avgNightlyRate: 0,
+  avgStayLength: 0,
+  occupancyRate: 0,
+};
+
+const calculateKPIsForRange = (
+  reservations: Reservation[],
+  propertyCount: number,
+  startDate: Date,
+  endDate: Date
+): KPIs => {
+  const totalRevenue = reservations.reduce((sum, r) => sum + r.revenue, 0);
+  const totalNights = reservations.reduce(
+    (sum, r) => sum + getNightsInRange(r.checkin, r.checkout, startDate, endDate),
+    0
+  );
+  const avgNightlyRate = totalNights ? totalRevenue / totalNights : 0;
+  const avgStayLength = reservations.length ? totalNights / reservations.length : 0;
+  const daysInRange = Math.max(
+    0,
+    Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+  );
+  const availableNights = propertyCount * daysInRange;
+  const occupancyRate = availableNights
+    ? Math.round((totalNights / availableNights) * 100)
+    : 0;
+
+  return { totalRevenue, avgNightlyRate, avgStayLength, occupancyRate };
+};
+
+const getPercentChange = (current: number, previous: number): number | null => {
+  if (previous === 0) {
+    return current === 0 ? 0 : null;
+  }
+  return ((current - previous) / Math.abs(previous)) * 100;
 };
 
 
@@ -534,6 +602,14 @@ const [syncing, setSyncing] = useState(false);
     ]
   };
 
+  const selectedPropertyNames = useMemo(() => {
+    return selectedProperties
+      .map((id) => currentData.properties.find((p) => p.id === id)?.name)
+      .filter((name): name is string => Boolean(name));
+  }, [selectedProperties, currentData.properties]);
+
+  const selectedPropertySet = useMemo(() => new Set(selectedPropertyNames), [selectedPropertyNames]);
+
   const getRolling12Months = (endMonth: number, endYear: number) => {
     return Array.from({ length: 12 }).map((_, i) => {
       const date = new Date(endYear, endMonth - (11 - i), 1);
@@ -581,6 +657,15 @@ async function connectToAPI() {
     }).format(amount);
   };
 
+  const formatCurrencyNoDecimals = (amount: number): string => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
+  };
+
   const formatNumber = (value: number): string => {
     return new Intl.NumberFormat('en-US').format(value);
   };
@@ -611,23 +696,29 @@ async function connectToAPI() {
   };
 
 
-  const getFilteredReservations = (): Reservation[] => {
-    const selectedPropertyNames = selectedProperties
-      .map(id => currentData.properties.find(p => p.id === id)?.name)
-      .filter(Boolean) as string[];
+  const filterReservationsByRange = useCallback(
+    (startDate: Date, endDate: Date): Reservation[] => {
+      if (selectedPropertySet.size === 0) return [];
 
+      return currentData.reservations.filter((reservation) => {
+        if (!selectedPropertySet.has(reservation.property)) return false;
+        const checkinDate = new Date(reservation.checkin);
+        const checkoutDate = new Date(reservation.checkout);
+        return checkinDate < endDate && checkoutDate > startDate;
+      });
+    },
+    [currentData.reservations, selectedPropertySet]
+  );
+
+  const getFilteredReservations = (): Reservation[] => {
     const monthIndex = monthsList.indexOf(selectedMonth);
     const year = Number(selectedYear);
+
+    if (monthIndex < 0) return [];
+
     const monthStart = new Date(year, monthIndex, 1);
     const monthEnd = new Date(year, monthIndex + 1, 1);
-
-    return currentData.reservations.filter(r => {
-      const propertyMatch = selectedPropertyNames.includes(r.property);
-      const checkinDate = new Date(r.checkin);
-      const checkoutDate = new Date(r.checkout);
-      const overlaps = checkinDate < monthEnd && checkoutDate > monthStart;
-      return propertyMatch && overlaps;
-    });
+    return filterReservationsByRange(monthStart, monthEnd);
   };
   // Backend data loading function
   const loadFromSupabase = async (): Promise<void> => {
@@ -719,16 +810,6 @@ async function connectToAPI() {
     }
   };
   
-  const calculateDemoKPIs = (): KPIs => {
-    const filteredReservations = getFilteredReservations();
-    return calculateKPIsFromReservations(
-      filteredReservations,
-      selectedProperties.length,
-      monthsList.indexOf(selectedMonth),
-      Number(selectedYear)
-    );
-  };
-
   const generateCalendar = (): { monthName: string; days: CalendarDay[] } => {
     const year = currentCalendarDate.getFullYear();
     const month = currentCalendarDate.getMonth();
@@ -783,17 +864,17 @@ async function connectToAPI() {
 
   const getBookingsForDate = (dateStr: string): Reservation[] => {
     const targetDate = new Date(dateStr);
-    const selectedPropertyNames = selectedProperties.map(id => 
-      currentData.properties.find(p => p.id === id)?.name
-    ).filter(Boolean) as string[];
+    if (selectedPropertySet.size === 0) return [];
 
-    return currentData.reservations.filter(reservation => {
+    return currentData.reservations.filter((reservation) => {
       const checkinDate = new Date(reservation.checkin);
       const checkoutDate = new Date(reservation.checkout);
-      
-      return targetDate >= checkinDate && 
-             targetDate < checkoutDate && 
-             selectedPropertyNames.includes(reservation.property);
+
+      return (
+        targetDate >= checkinDate &&
+        targetDate < checkoutDate &&
+        selectedPropertySet.has(reservation.property)
+      );
     });
   };
 
@@ -942,13 +1023,9 @@ async function connectToAPI() {
   };
 
   const generateOccupancyChartData = () => {
-    const selectedPropertyNames = selectedProperties
-      .map(id => currentData.properties.find(p => p.id === id)?.name)
-      .filter(Boolean) as string[];
-
     const calcRate = (pairs: { monthIndex: number; year: number }[]) => {
       const totalNights = currentData.reservations
-        .filter(r => selectedPropertyNames.includes(r.property))
+        .filter((r) => selectedPropertySet.has(r.property))
         .reduce((sum, r) => {
           return sum + pairs.reduce((inner, { monthIndex, year }) => {
             return inner + getNightsInMonth(r.checkin, r.checkout, monthIndex, year);
@@ -1030,9 +1107,7 @@ async function connectToAPI() {
   };
 
   const generateRevenueChartData = () => {
-    const selectedPropertyNames = selectedProperties
-      .map(id => currentData.properties.find(p => p.id === id)?.name)
-      .filter(Boolean) as string[];
+    if (selectedPropertySet.size === 0) return [];
     if (currentView === 'seasonal') {
       const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
       const seasonMonths: Record<string, number[]> = {
@@ -1043,7 +1118,7 @@ async function connectToAPI() {
       };
       return seasons.map((season) => {
         const total = currentData.reservations
-          .filter(r => selectedPropertyNames.includes(r.property))
+          .filter((r) => selectedPropertySet.has(r.property))
           .filter(r => seasonMonths[season].includes(new Date(r.checkin).getMonth()))
           .reduce((sum, r) => {
             return revenueMetric === 'amount'
@@ -1059,7 +1134,7 @@ async function connectToAPI() {
       );
       return months.map(({ label, monthIndex, year }) => {
         const total = currentData.reservations
-          .filter(r => selectedPropertyNames.includes(r.property))
+          .filter((r) => selectedPropertySet.has(r.property))
           .filter(r => {
             const d = new Date(r.checkin);
             return d.getMonth() === monthIndex && d.getFullYear() === year;
@@ -1074,14 +1149,110 @@ async function connectToAPI() {
     }
   };
 
-  const kpis = backendData
-    ? calculateKPIsFromReservations(
-        getFilteredReservations(),
-        selectedProperties.length,
-        monthsList.indexOf(selectedMonth),
-        Number(selectedYear)
-      )
-    : calculateDemoKPIs();
+  const currentMonthIndex = monthsList.indexOf(selectedMonth);
+  const currentYearNumber = Number(selectedYear);
+  const kpiPeriod = revenueChartMode === 'ytd' ? 'ytd' : 'monthly';
+
+  const kpis = useMemo(() => {
+    if (currentMonthIndex < 0) {
+      return EMPTY_KPIS;
+    }
+
+    if (kpiPeriod === 'ytd') {
+      const start = new Date(currentYearNumber, 0, 1);
+      const end = new Date(currentYearNumber, currentMonthIndex + 1, 1);
+      const reservations = filterReservationsByRange(start, end);
+      return calculateKPIsForRange(reservations, selectedProperties.length, start, end);
+    }
+
+    const monthStart = new Date(currentYearNumber, currentMonthIndex, 1);
+    const monthEnd = new Date(currentYearNumber, currentMonthIndex + 1, 1);
+    const reservations = filterReservationsByRange(monthStart, monthEnd);
+    return calculateKPIsFromReservations(
+      reservations,
+      selectedProperties.length,
+      currentMonthIndex,
+      currentYearNumber
+    );
+  }, [currentMonthIndex, currentYearNumber, filterReservationsByRange, kpiPeriod, selectedProperties.length]);
+
+  const comparisonData = useMemo<KPIComparisonData | null>(() => {
+    if (currentMonthIndex < 0 || selectedProperties.length === 0) {
+      return null;
+    }
+
+    if (kpiPeriod === 'ytd') {
+      const previousYear = currentYearNumber - 1;
+      const start = new Date(previousYear, 0, 1);
+      const end = new Date(previousYear, currentMonthIndex + 1, 1);
+      const reservations = filterReservationsByRange(start, end);
+      const previous = calculateKPIsForRange(reservations, selectedProperties.length, start, end);
+      return { label: 'vs prior YTD', previous };
+    }
+
+    const prevMonthIndex = (currentMonthIndex + 11) % 12;
+    const prevYear = prevMonthIndex === 11 ? currentYearNumber - 1 : currentYearNumber;
+    const start = new Date(prevYear, prevMonthIndex, 1);
+    const end = new Date(prevYear, prevMonthIndex + 1, 1);
+    const reservations = filterReservationsByRange(start, end);
+    const previous = calculateKPIsFromReservations(
+      reservations,
+      selectedProperties.length,
+      prevMonthIndex,
+      prevYear
+    );
+    return { label: 'vs last month', previous };
+  }, [currentMonthIndex, currentYearNumber, filterReservationsByRange, kpiPeriod, selectedProperties.length]);
+
+  const kpiComparisons = useMemo<KPIComparisonResult | null>(() => {
+    if (!comparisonData) return null;
+
+    const { previous, label } = comparisonData;
+
+    return {
+      label,
+      metrics: {
+        totalRevenue: getPercentChange(kpis.totalRevenue, previous.totalRevenue),
+        avgNightlyRate: getPercentChange(kpis.avgNightlyRate, previous.avgNightlyRate),
+        avgStayLength: getPercentChange(kpis.avgStayLength, previous.avgStayLength),
+        occupancyRate: getPercentChange(kpis.occupancyRate, previous.occupancyRate),
+      },
+    };
+  }, [comparisonData, kpis]);
+
+  const renderComparisonBadge = (metric: keyof KPIs) => {
+    const change = kpiComparisons?.metrics[metric] ?? null;
+
+    if (!kpiComparisons) {
+      return (
+        <div className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full inline-block">
+          No comparison data
+        </div>
+      );
+    }
+
+    if (change === null) {
+      return (
+        <div className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full inline-block">
+          No prior data
+        </div>
+      );
+    }
+
+    const badgeClass =
+      change > 0
+        ? 'bg-green-100 text-green-800'
+        : change < 0
+        ? 'bg-red-100 text-red-800'
+        : 'bg-gray-100 text-gray-700';
+    const sign = change > 0 ? '+' : change < 0 ? '-' : '';
+
+    return (
+      <div className={`text-xs px-2 py-1 rounded-full inline-block ${badgeClass}`}>
+        {`${sign}${Math.abs(change).toFixed(1)}% ${kpiComparisons.label}`}
+      </div>
+    );
+  };
   const calendar = generateCalendar();
 
   return (
@@ -1215,31 +1386,23 @@ async function connectToAPI() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 hover:shadow-md transition-shadow" style={{ borderLeftColor: BRAND_COLORS.primary }}>
               <div className="text-gray-600 text-sm font-medium mb-2">Total Revenue</div>
-              <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(kpis.totalRevenue)}</div>
-              <div className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full inline-block">
-                +8.3% vs last month
-              </div>
+              <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrencyNoDecimals(kpis.totalRevenue)}</div>
+              {renderComparisonBadge('totalRevenue')}
             </div>
             <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 hover:shadow-md transition-shadow" style={{ borderLeftColor: BRAND_COLORS.secondary }}>
               <div className="text-gray-600 text-sm font-medium mb-2">Occupancy Rate</div>
               <div className="text-3xl font-bold text-gray-900 mb-1">{kpis.occupancyRate}%</div>
-              <div className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full inline-block">
-                +4.2% vs last month
-              </div>
+              {renderComparisonBadge('occupancyRate')}
             </div>
             <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 hover:shadow-md transition-shadow" style={{ borderLeftColor: BRAND_COLORS.tertiary }}>
               <div className="text-gray-600 text-sm font-medium mb-2">Avg Nightly Rate</div>
-              <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(kpis.avgNightlyRate)}</div>
-              <div className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full inline-block">
-                +2.1% vs last month
-              </div>
+              <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrencyNoDecimals(kpis.avgNightlyRate)}</div>
+              {renderComparisonBadge('avgNightlyRate')}
             </div>
             <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 hover:shadow-md transition-shadow" style={{ borderLeftColor: BRAND_COLORS.warning }}>
               <div className="text-gray-600 text-sm font-medium mb-2">Avg Stay Length</div>
-              <div className="text-3xl font-bold text-gray-900 mb-1">{kpis.avgStayLength.toFixed(1)} nights</div>
-              <div className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full inline-block">
-                +0.2 vs last month
-              </div>
+              <div className="text-3xl font-bold text-gray-900 mb-1">{Math.round(kpis.avgStayLength)} nights</div>
+              {renderComparisonBadge('avgStayLength')}
             </div>
           </div>
 
