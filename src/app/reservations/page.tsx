@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Download, RefreshCw, Plus, X, ChevronDown, Calendar } from 'lucide-react';
 import MultiSelect from '@/components/MultiSelect';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell, TooltipProps } from 'recharts';
 import { supabase } from '@/lib/supabaseClient';
 import { getCurrentMonthRange } from '@/lib/utils';
 
@@ -38,6 +38,8 @@ const BRAND_COLORS = {
 };
 
 const PROPERTY_PALETTE = ['#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#3B82F6'];
+
+const DAY_IN_MS = 1000 * 60 * 60 * 24;
 
 // Types
 type Property = {
@@ -95,6 +97,17 @@ type KPIComparisonResult = {
     avgStayLength: number | null;
     occupancyRate: number | null;
   };
+};
+
+type RevenueChartEntry = {
+  label: string;
+  value: number;
+  nights: number;
+  color?: string;
+  occupancyRate?: number | null;
+  rangeStart?: string;
+  rangeEnd?: string;
+  propertyName?: string;
 };
 
 type DBReservationRow = {
@@ -183,7 +196,17 @@ const getNightsInRange = (
   const effectiveStart = start > startDate ? start : startDate;
   const effectiveEnd = end < endDate ? end : endDate;
   const diff = effectiveEnd.getTime() - effectiveStart.getTime();
-  return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
+  return diff > 0 ? diff / DAY_IN_MS : 0;
+};
+
+const calculateDaysBetween = (startDate: Date, endDate: Date): number => {
+  const diff = endDate.getTime() - startDate.getTime();
+  return diff > 0 ? diff / DAY_IN_MS : 0;
+};
+
+const computeOccupancyRate = (bookedNights: number, availableNights: number): number | null => {
+  if (availableNights <= 0) return null;
+  return Number(((bookedNights / availableNights) * 100).toFixed(1));
 };
 
 const parseDateInput = (value: string): Date | null => {
@@ -492,6 +515,13 @@ const ReservationsTab: React.FC = () => {
   const [customStartDate, setCustomStartDate] = useState<string>(() => getCurrentMonthRange().start);
   const [customEndDate, setCustomEndDate] = useState<string>(() => getCurrentMonthRange().end);
   const [revenueMetric, setRevenueMetric] = useState<'amount' | 'nights'>('amount');
+  const [chartDetail, setChartDetail] = useState<{
+    label: string;
+    reservations: Reservation[];
+    rangeStart?: string;
+    rangeEnd?: string;
+  } | null>(null);
+  const [showAllChartDetail, setShowAllChartDetail] = useState(false);
   const [newReservationForm, setNewReservationForm] = useState<NewReservationForm>({
     guestName: '',
     guestEmail: '',
@@ -641,6 +671,8 @@ const ReservationsTab: React.FC = () => {
       .filter((name): name is string => Boolean(name));
   }, [selectedProperties, currentData.properties]);
 
+  const selectedPropertiesKey = useMemo(() => selectedProperties.join('|'), [selectedProperties]);
+
   const selectedPropertySet = useMemo(() => new Set(selectedPropertyNames), [selectedPropertyNames]);
 
   const getRolling12Months = (endMonth: number, endYear: number) => {
@@ -711,6 +743,39 @@ async function connectToAPI() {
     });
   };
 
+  const renderRevenueTooltip = ({
+    active,
+    payload,
+    label,
+  }: TooltipProps<number, string>) => {
+    if (!active || !payload || payload.length === 0) return null;
+
+    const entry = payload[0].payload as RevenueChartEntry;
+    const metricLabel = revenueMetric === 'amount' ? 'Revenue' : 'Days Booked';
+    const formattedValue =
+      revenueMetric === 'amount'
+        ? formatCurrency(entry.value)
+        : formatNumber(entry.value);
+
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-4 py-3 text-xs text-gray-600">
+        <div className="text-sm font-semibold text-gray-900">{label}</div>
+        <div className="mt-2 flex justify-between gap-8">
+          <span>{metricLabel}</span>
+          <span className="font-semibold text-gray-900">{formattedValue}</span>
+        </div>
+        {revenueMetric === 'nights' && typeof entry.occupancyRate === 'number' && (
+          <div className="mt-1 flex justify-between gap-8">
+            <span>Occupancy Rate</span>
+            <span className="font-semibold text-gray-900">
+              {entry.occupancyRate.toFixed(1)}%
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const showNotification = (message: string, type: 'info' | 'success' | 'error' = 'info'): void => {
     setNotification({ show: true, message, type });
     setTimeout(() => {
@@ -728,7 +793,6 @@ async function connectToAPI() {
     return property ? property.id : slugify(propertyName);
   };
 
-
   const filterReservationsByRange = useCallback(
     (startDate: Date, endDate: Date): Reservation[] => {
       if (selectedPropertySet.size === 0) return [];
@@ -743,10 +807,6 @@ async function connectToAPI() {
     [currentData.reservations, selectedPropertySet]
   );
 
-  const getFilteredReservations = (): Reservation[] => {
-    if (!activeDateRange) return [];
-    return filterReservationsByRange(activeDateRange.start, activeDateRange.end);
-  };
   // Backend data loading function
   const loadFromSupabase = async (): Promise<void> => {
     try {
@@ -1133,7 +1193,7 @@ async function connectToAPI() {
     }
   };
 
-  const generateRevenueChartData = () => {
+  const generateRevenueChartData = (): RevenueChartEntry[] => {
     if (selectedPropertySet.size === 0 || !activeDateRange) return [];
 
     const reservationsInRange = filterReservationsByRange(
@@ -1142,32 +1202,44 @@ async function connectToAPI() {
     );
 
     if (currentView === 'property') {
-      const propertyTotals: Record<string, number> = {};
+      const propertyTotals: Record<string, { value: number; nights: number }> = {};
       selectedPropertyNames.forEach((name) => {
-        propertyTotals[name] = 0;
+        propertyTotals[name] = { value: 0, nights: 0 };
       });
 
       reservationsInRange.forEach((reservation) => {
         if (!selectedPropertySet.has(reservation.property)) return;
-        const value =
-          revenueMetric === 'amount'
-            ? reservation.revenue
-            : getNightsInRange(
-                reservation.checkin,
-                reservation.checkout,
-                activeDateRange.start,
-                activeDateRange.end
-              );
-        propertyTotals[reservation.property] =
-          (propertyTotals[reservation.property] || 0) + value;
+        const nights = getNightsInRange(
+          reservation.checkin,
+          reservation.checkout,
+          activeDateRange.start,
+          activeDateRange.end
+        );
+        const contributionValue =
+          revenueMetric === 'amount' ? reservation.revenue : nights;
+
+        const totals = propertyTotals[reservation.property] ?? { value: 0, nights: 0 };
+        totals.value += contributionValue;
+        totals.nights += nights;
+        propertyTotals[reservation.property] = totals;
       });
+
+      const rangeDays = calculateDaysBetween(activeDateRange.start, activeDateRange.end);
 
       return Object.entries(propertyTotals)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([property, total]) => ({
+        .map(([property, totals]) => ({
           label: property,
-          value: total,
+          value: totals.value,
+          nights: totals.nights,
           color: getPropertyColor(property),
+          occupancyRate:
+            revenueMetric === 'nights'
+              ? computeOccupancyRate(totals.nights, rangeDays)
+              : null,
+          rangeStart: activeDateRange.start.toISOString(),
+          rangeEnd: activeDateRange.end.toISOString(),
+          propertyName: property,
         }));
     }
 
@@ -1180,30 +1252,99 @@ async function connectToAPI() {
         Fall: [8, 9, 10],
       };
 
-      const totals = seasons.reduce<Record<string, number>>((acc, season) => {
-        acc[season] = 0;
-        return acc;
-      }, {});
+      const totals = seasons.reduce<Record<string, { value: number; nights: number }>>(
+        (acc, season) => {
+          acc[season] = { value: 0, nights: 0 };
+          return acc;
+        },
+        {}
+      );
 
       reservationsInRange.forEach((reservation) => {
         const checkInMonth = new Date(reservation.checkin).getMonth();
         const season = seasons.find((s) => seasonMonths[s].includes(checkInMonth));
         if (!season) return;
 
-        const value =
-          revenueMetric === 'amount'
-            ? reservation.revenue
-            : getNightsInRange(
-                reservation.checkin,
-                reservation.checkout,
-                activeDateRange.start,
-                activeDateRange.end
-              );
-        totals[season] += value;
+        const nights = getNightsInRange(
+          reservation.checkin,
+          reservation.checkout,
+          activeDateRange.start,
+          activeDateRange.end
+        );
+        const contributionValue =
+          revenueMetric === 'amount' ? reservation.revenue : nights;
+
+        totals[season].value += contributionValue;
+        totals[season].nights += nights;
       });
 
+      const coverageCache = new Map<
+        (typeof seasons)[number],
+        { days: number; start?: string; end?: string }
+      >();
+
+      const getSeasonCoverage = (season: (typeof seasons)[number]) => {
+        if (coverageCache.has(season)) {
+          return coverageCache.get(season)!;
+        }
+
+        const months = seasonMonths[season];
+        let totalDays = 0;
+        let earliest: Date | null = null;
+        let latest: Date | null = null;
+
+        for (
+          let year = activeDateRange.start.getFullYear() - 1;
+          year <= activeDateRange.end.getFullYear();
+          year++
+        ) {
+          months.forEach((monthIndex) => {
+            const monthStart = new Date(year, monthIndex, 1);
+            const monthEnd = new Date(year, monthIndex + 1, 1);
+            const effectiveStart =
+              monthStart < activeDateRange.start ? activeDateRange.start : monthStart;
+            const effectiveEnd =
+              monthEnd > activeDateRange.end ? activeDateRange.end : monthEnd;
+            const days = calculateDaysBetween(effectiveStart, effectiveEnd);
+
+            if (days > 0) {
+              totalDays += days;
+              if (!earliest || effectiveStart < earliest) {
+                earliest = new Date(effectiveStart);
+              }
+              if (!latest || effectiveEnd > latest) {
+                latest = new Date(effectiveEnd);
+              }
+            }
+          });
+        }
+
+        const coverage = {
+          days: totalDays,
+          start: earliest ? earliest.toISOString() : undefined,
+          end: latest ? latest.toISOString() : undefined,
+        };
+        coverageCache.set(season, coverage);
+        return coverage;
+      };
+
       return seasons
-        .map((season) => ({ label: season, value: totals[season] }))
+        .map((season) => {
+          const totalsForSeason = totals[season];
+          const coverage = getSeasonCoverage(season);
+          const availableNights = coverage.days * selectedPropertySet.size;
+          return {
+            label: season,
+            value: totalsForSeason.value,
+            nights: totalsForSeason.nights,
+            occupancyRate:
+              revenueMetric === 'nights'
+                ? computeOccupancyRate(totalsForSeason.nights, availableNights)
+                : null,
+            rangeStart: coverage.start,
+            rangeEnd: coverage.end,
+          } as RevenueChartEntry;
+        })
         .filter((entry) => entry.value !== 0 || reservationsInRange.length === 0);
     }
 
@@ -1234,30 +1375,47 @@ async function connectToAPI() {
       const clampedStart = start < activeDateRange.start ? activeDateRange.start : start;
       const clampedEnd = end > activeDateRange.end ? activeDateRange.end : end;
 
-      const total = reservationsInRange.reduce((sum, reservation) => {
+      let totalValue = 0;
+      let totalNights = 0;
+
+      reservationsInRange.forEach((reservation) => {
+        const nights = getNightsInRange(
+          reservation.checkin,
+          reservation.checkout,
+          clampedStart,
+          clampedEnd
+        );
+        if (nights > 0) {
+          totalNights += nights;
+        }
+
         if (revenueMetric === 'amount') {
           const checkinDate = new Date(reservation.checkin);
           if (
-            checkinDate.getFullYear() !== year ||
-            checkinDate.getMonth() !== monthIndex
+            checkinDate.getFullYear() === year &&
+            checkinDate.getMonth() === monthIndex
           ) {
-            return sum;
+            totalValue += reservation.revenue;
           }
-          return sum + reservation.revenue;
+        } else {
+          totalValue += nights;
         }
+      });
 
-        return (
-          sum +
-          getNightsInRange(
-            reservation.checkin,
-            reservation.checkout,
-            clampedStart,
-            clampedEnd
-          )
-        );
-      }, 0);
+      const daysInRange = calculateDaysBetween(clampedStart, clampedEnd);
+      const availableNights = daysInRange * selectedPropertySet.size;
 
-      return { label, value: total };
+      return {
+        label,
+        value: totalValue,
+        nights: totalNights,
+        occupancyRate:
+          revenueMetric === 'nights'
+            ? computeOccupancyRate(totalNights, availableNights)
+            : null,
+        rangeStart: clampedStart.toISOString(),
+        rangeEnd: clampedEnd.toISOString(),
+      } as RevenueChartEntry;
     });
   };
 
@@ -1450,7 +1608,70 @@ async function connectToAPI() {
     );
   };
   const revenueChartData = generateRevenueChartData();
+
+  useEffect(() => {
+    setChartDetail(null);
+    setShowAllChartDetail(false);
+  }, [activeDateRange, currentView, revenueMetric, selectedPropertiesKey]);
+
+  const handleRevenueBarClick = useCallback(
+    (data: { payload?: RevenueChartEntry }) => {
+      if (!activeDateRange) return;
+      const entry = data?.payload;
+      if (!entry) return;
+
+      let reservations = filterReservationsByRange(
+        activeDateRange.start,
+        activeDateRange.end
+      );
+
+      if (currentView === 'property' && entry.propertyName) {
+        reservations = reservations.filter(
+          (reservation) => reservation.property === entry.propertyName
+        );
+      } else if (entry.rangeStart && entry.rangeEnd) {
+        const rangeStartDate = new Date(entry.rangeStart);
+        const rangeEndDate = new Date(entry.rangeEnd);
+        reservations = reservations.filter((reservation) => {
+          const checkinDate = new Date(reservation.checkin);
+          const checkoutDate = new Date(reservation.checkout);
+          return checkinDate < rangeEndDate && checkoutDate > rangeStartDate;
+        });
+      }
+
+      const sortedReservations = [...reservations].sort(
+        (a, b) => new Date(b.checkin).getTime() - new Date(a.checkin).getTime()
+      );
+
+      setChartDetail({
+        label: entry.label,
+        reservations: sortedReservations,
+        rangeStart: entry.rangeStart,
+        rangeEnd: entry.rangeEnd,
+      });
+      setShowAllChartDetail(false);
+    },
+    [activeDateRange, currentView, filterReservationsByRange]
+  );
+
   const calendar = generateCalendar();
+  const visibleChartReservations = chartDetail
+    ? (showAllChartDetail
+        ? chartDetail.reservations
+        : chartDetail.reservations.slice(0, 10))
+    : [];
+  const totalChartReservations = chartDetail?.reservations.length ?? 0;
+  const chartDetailRangeEndDisplay = chartDetail?.rangeStart && chartDetail?.rangeEnd
+    ? (() => {
+        const startDate = new Date(chartDetail.rangeStart);
+        const endDate = new Date(chartDetail.rangeEnd);
+        if (endDate.getTime() <= startDate.getTime()) {
+          return chartDetail.rangeEnd;
+        }
+        const adjusted = new Date(endDate.getTime() - DAY_IN_MS);
+        return adjusted.toISOString();
+      })()
+    : undefined;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1663,7 +1884,7 @@ async function connectToAPI() {
 
           {/* Main Content Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left Column: Charts and Reservations Table */}
+            {/* Left Column: Charts and Reservation Insights */}
             <div className="lg:col-span-2 space-y-8">
               {/* Revenue / Days Booked Chart */}
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
@@ -1747,18 +1968,14 @@ async function connectToAPI() {
                         }
                         domain={[0, (dataMax: number) => dataMax * 1.1]}
                       />
-                      <Tooltip
-                        formatter={(value: number) => [
-                          revenueMetric === 'amount' ? formatCurrency(value) : formatNumber(value),
-                          revenueMetric === 'amount' ? 'Revenue' : 'Days Booked'
-                        ]}
-                      />
+                      <Tooltip content={renderRevenueTooltip} />
                       <Legend />
                       <Bar
                         dataKey="value"
                         name={revenueMetric === 'amount' ? 'Revenue' : 'Days Booked'}
                         fill={BRAND_COLORS.primary}
                         radius={[4, 4, 0, 0]}
+                        onClick={handleRevenueBarClick}
                       >
                         {currentView === 'property'
                           ? revenueChartData.map((entry) => (
@@ -1769,6 +1986,68 @@ async function connectToAPI() {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+                {chartDetail && (
+                  <div className="border-t border-gray-100">
+                    <div className="p-6 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-900">
+                            Reservations for {chartDetail.label}
+                          </h4>
+                          <p className="text-sm text-gray-500">
+                            Showing {visibleChartReservations.length} of {totalChartReservations} reservation{totalChartReservations === 1 ? '' : 's'}
+                          </p>
+                          {chartDetail.rangeStart && chartDetailRangeEndDisplay && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              {formatDate(chartDetail.rangeStart)} – {formatDate(chartDetailRangeEndDisplay)}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {totalChartReservations > 10 && (
+                            <button
+                              onClick={() => setShowAllChartDetail((prev) => !prev)}
+                              className="text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                            >
+                              {showAllChartDetail ? 'Show Top 10' : 'View All'}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setChartDetail(null)}
+                            className="text-sm font-medium text-gray-500 hover:text-gray-700"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {visibleChartReservations.length === 0 ? (
+                          <div className="text-sm text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-lg p-4 text-center">
+                            No reservations found for this selection.
+                          </div>
+                        ) : (
+                          visibleChartReservations.map((reservation) => (
+                            <div
+                              key={`${reservation.id}-${reservation.checkin}`}
+                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-lg px-4 py-3"
+                            >
+                              <div>
+                                <div className="text-sm font-semibold text-gray-900">{reservation.guest}</div>
+                                <div className="text-xs text-gray-500">
+                                  {reservation.property} • {formatDate(reservation.checkin)} - {formatDate(reservation.checkout)}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-4 text-sm text-gray-600">
+                                <span>{reservation.nights} night{reservation.nights === 1 ? '' : 's'}</span>
+                                <span className="font-semibold text-gray-900">{formatCurrency(reservation.revenue)}</span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Occupancy Trend Chart */}
@@ -1849,74 +2128,6 @@ async function connectToAPI() {
                 </div>
               </div>
 
-              {/* Reservations Table */}
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-gray-200">
-                  <h3 className="text-xl font-semibold text-gray-900">Upcoming Reservations</h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Guest</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Property</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check-in</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nights</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {getFilteredReservations().map((reservation) => (
-                        <tr key={reservation.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {reservation.guest}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {reservation.property}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatDate(reservation.checkin)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {reservation.nights}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatCurrency(reservation.revenue)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                              reservation.status === 'confirmed'
-                                ? 'bg-green-100 text-green-800'
-                                : reservation.status === 'pending'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}>
-                              {reservation.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <button
-                              onClick={() => showNotification(`Viewing reservation for ${reservation.guest}`, 'info')}
-                              className="hover:text-gray-900 mr-3"
-                              style={{ color: BRAND_COLORS.primary }}
-                            >
-                              View
-                            </button>
-                            <button
-                              onClick={() => showNotification(`Editing reservation for ${reservation.guest}`, 'info')}
-                              className="text-gray-600 hover:text-gray-900"
-                            >
-                              Edit
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
             </div>
 
             {/* Right Column: Calendar and Revenue Reconciliation */}
