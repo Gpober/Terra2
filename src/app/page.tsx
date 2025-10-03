@@ -84,22 +84,42 @@ const classifyPLAccount = (accountType, reportCategory, accountName) => {
 
   if (isCashAccount || isTransfer) return null;
 
-  // INCOME ACCOUNTS - Based on account_type
-  const isIncomeAccount =
+  // Look for strong expense signals first so mixed labels like "Income Tax Expense"
+  // are still treated as expenses.
+  const hasExpenseSignal =
+    typeLower === "expense" ||
+    typeLower === "expenses" ||
+    typeLower === "other expense" ||
+    typeLower === "cost of goods sold" ||
+    typeLower.includes("expense") ||
+    typeLower.includes("cogs") ||
+    categoryLower.includes("expense") ||
+    categoryLower.includes("cost of goods") ||
+    categoryLower.includes("cogs") ||
+    categoryLower.includes("payroll") ||
+    nameLower.includes("expense") ||
+    nameLower.includes("cost of goods");
+
+  if (hasExpenseSignal) return "EXPENSES";
+
+  // Then fall back to income detection so we can include revenue accounts that
+  // may be stored under non-standard account types but have income metadata.
+  const hasIncomeSignal =
     typeLower === "income" ||
     typeLower === "other income" ||
     typeLower.includes("income") ||
-    typeLower.includes("revenue");
+    typeLower.includes("revenue") ||
+    categoryLower.includes("income") ||
+    categoryLower.includes("revenue") ||
+    categoryLower.includes("sales") ||
+    categoryLower.includes("short term rental") ||
+    categoryLower.includes("rental income") ||
+    nameLower.includes("income") ||
+    nameLower.includes("revenue") ||
+    nameLower.includes("short term rental") ||
+    nameLower.includes("airbnb");
 
-  // EXPENSE ACCOUNTS - Based on account_type
-  const isExpenseAccount =
-    typeLower === "expense" ||
-    typeLower === "other expense" ||
-    typeLower === "cost of goods sold" ||
-    typeLower.includes("expense");
-
-  if (isIncomeAccount) return "INCOME";
-  if (isExpenseAccount) return "EXPENSES";
+  if (hasIncomeSignal) return "INCOME";
 
   return null; // Not a P&L account (likely Balance Sheet account)
 };
