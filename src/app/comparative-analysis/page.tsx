@@ -162,8 +162,12 @@ export default function EnhancedComparativeAnalysis() {
     return data || [];
   };
 
-  const fetchReservations = async (start: string, end: string) => {
-    const { data, error } = await supabase
+  const fetchReservations = async (
+    start: string,
+    end: string,
+    propertiesFilter?: string[],
+  ) => {
+    let query = supabase
       .from("reservations")
       .select(
         "id, reservation_id, check_in, check_out, guest, qbo_listing, source, net_income",
@@ -171,6 +175,12 @@ export default function EnhancedComparativeAnalysis() {
       .gte("check_in", start)
       .lte("check_in", end)
       .not("qbo_listing", "is", null);
+
+    if (propertiesFilter && propertiesFilter.length > 0) {
+      query = query.in("qbo_listing", propertiesFilter);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
@@ -476,8 +486,8 @@ export default function EnhancedComparativeAnalysis() {
       const [linesA, linesB, reservationsA, reservationsB] = await Promise.all([
         fetchLines(startA, endA, classFilter),
         fetchLines(startB, endB, classFilter),
-        fetchReservations(startA, endA),
-        fetchReservations(startB, endB),
+        fetchReservations(startA, endA, classFilter),
+        fetchReservations(startB, endB, classFilter),
       ]);
 
       const kpiA = computeKPIs(linesA);
