@@ -206,6 +206,51 @@ export default function CashFlowPage() {
     return { year, month, day }
   }
 
+  const enrichWithLineDetails = async (rows: any[]) => {
+    try {
+      const entryNumbers = Array.from(
+        new Set(rows.map((row: any) => row.entry_number).filter(Boolean)),
+      )
+
+      if (entryNumbers.length === 0) {
+        return rows
+      }
+
+      const { data: details, error } = await supabase
+        .from("journal_entry_lines")
+        .select("entry_number,memo,name,customer,vendor")
+        .in("entry_number", entryNumbers)
+
+      if (error || !details) {
+        if (error) {
+          console.error("Error fetching line details for enrichment:", error)
+        }
+        return rows
+      }
+
+      const detailMap = new Map<string, any>()
+      details.forEach((detail: any) => {
+        if (!detailMap.has(detail.entry_number)) {
+          detailMap.set(detail.entry_number, detail)
+        }
+      })
+
+      return rows.map((row: any) => {
+        const detail = detailMap.get(row.entry_number) || {}
+        return {
+          ...row,
+          memo: row.memo ?? detail.memo ?? null,
+          name: row.name ?? detail.name ?? null,
+          customer: row.customer ?? detail.customer ?? null,
+          vendor: row.vendor ?? detail.vendor ?? null,
+        }
+      })
+    } catch (err) {
+      console.error("Unexpected error enriching line details:", err)
+      return rows
+    }
+  }
+
   // Get month from date string
   const getMonthFromDate = (dateString: string): number => {
     const { month } = getDateParts(dateString)
@@ -794,7 +839,9 @@ export default function CashFlowPage() {
 
       let query = supabase
         .from("journal_entry_lines")
-        .select("entry_number,date,entry_bank_account,debit,credit,report_category,class")
+        .select(
+          "entry_number,date,entry_bank_account,debit,credit,report_category,class,memo,name,customer,vendor",
+        )
         .gte("date", startDate)
         .lte("date", endDate)
         .eq("is_cash_account", true)
@@ -867,7 +914,7 @@ export default function CashFlowPage() {
     } catch (err) {
       console.error("❌ Error fetching bank account cash flow data:", err)
       setError(err instanceof Error ? err.message : "Unknown error")
-  } finally {
+    } finally {
       setIsLoading(false)
     }
   }
@@ -899,7 +946,9 @@ export default function CashFlowPage() {
     }
 
     const { data: viewData, error: viewError } = await viewQuery
-    if (!viewError && viewData) return viewData
+    if (!viewError && viewData) {
+      return await enrichWithLineDetails(viewData)
+    }
 
     console.warn("cash_related_offsets view unavailable, falling back to manual query", viewError)
 
@@ -952,11 +1001,13 @@ export default function CashFlowPage() {
     const { data: offsetLines, error: offsetError } = await offsetQuery
     if (offsetError) throw offsetError
 
-    return offsetLines.map((o: any) => ({
-        ...o,
-        cash_bank_account: entryBankMap.get(o.entry_number) || null,
-        cash_effect: toNum(o.credit) - toNum(o.debit),
-      }))
+    const enrichedOffsetLines = await enrichWithLineDetails(offsetLines)
+
+    return enrichedOffsetLines.map((o: any) => ({
+      ...o,
+      cash_bank_account: entryBankMap.get(o.entry_number) || null,
+      cash_effect: toNum(o.credit) - toNum(o.debit),
+    }))
   }
 
   // FIXED: Fetch offset account data with corrected transfer toggle logic
