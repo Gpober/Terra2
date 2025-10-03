@@ -877,7 +877,9 @@ export default function CashFlowPage() {
     // Attempt to use the cash_related_offsets view
     let viewQuery = supabase
       .from("cash_related_offsets")
-      .select("entry_number,date,class,account,account_type,report_category,debit,credit,cash_effect,cash_bank_account")
+      .select(
+        "entry_number,date,class,account,account_type,report_category,debit,credit,cash_effect,cash_bank_account,memo,name,customer,vendor",
+      )
       .gte("date", startDate)
       .lte("date", endDate)
 
@@ -943,9 +945,11 @@ export default function CashFlowPage() {
 
     if (entryNumbers.length === 0) return []
 
-    let offsetQuery = supabase
+    const offsetQuery = supabase
       .from("journal_entry_lines")
-      .select("entry_number,date,class,account,account_type,report_category,debit,credit")
+      .select(
+        "entry_number,date,class,account,account_type,report_category,debit,credit,memo,name,customer,vendor",
+      )
       .in("entry_number", entryNumbers)
       .eq("is_cash_account", false)
 
