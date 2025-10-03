@@ -352,6 +352,103 @@ export default function FinancialOverviewPage() {
     return { startDate, endDate };
   };
 
+  const formatDateForQuery = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const toDate = (dateString: string) => {
+    const { year, month, day } = getDateParts(dateString);
+    return new Date(year, month - 1, day);
+  };
+
+  const calculateComparisonRange = (
+    currentStartDate: string,
+    currentEndDate: string,
+  ) => {
+    if (timePeriod === "Monthly") {
+      const monthIndex = monthsList.indexOf(selectedMonth);
+      const year = Number.parseInt(selectedYear);
+      const previousStart = new Date(year, monthIndex, 1);
+      previousStart.setMonth(previousStart.getMonth() - 1);
+      const previousEnd = new Date(
+        previousStart.getFullYear(),
+        previousStart.getMonth() + 1,
+        0,
+      );
+
+      return {
+        startDate: formatDateForQuery(previousStart),
+        endDate: formatDateForQuery(previousEnd),
+      };
+    }
+
+    if (timePeriod === "Quarterly") {
+      const monthIndex = monthsList.indexOf(selectedMonth);
+      const year = Number.parseInt(selectedYear);
+      const quarterStartMonth = Math.floor(monthIndex / 3) * 3;
+      const previousQuarterStart = new Date(year, quarterStartMonth, 1);
+      previousQuarterStart.setMonth(previousQuarterStart.getMonth() - 3);
+      const previousQuarterEnd = new Date(
+        previousQuarterStart.getFullYear(),
+        previousQuarterStart.getMonth() + 3,
+        0,
+      );
+
+      return {
+        startDate: formatDateForQuery(previousQuarterStart),
+        endDate: formatDateForQuery(previousQuarterEnd),
+      };
+    }
+
+    if (timePeriod === "YTD") {
+      const monthIndex = monthsList.indexOf(selectedMonth);
+      const year = Number.parseInt(selectedYear);
+      const previousYear = year - 1;
+      const previousStart = new Date(previousYear, 0, 1);
+      const previousEnd = new Date(previousYear, monthIndex + 1, 0);
+
+      return {
+        startDate: formatDateForQuery(previousStart),
+        endDate: formatDateForQuery(previousEnd),
+      };
+    }
+
+    if (timePeriod === "Trailing 12") {
+      const currentStart = toDate(currentStartDate);
+      const currentEnd = toDate(currentEndDate);
+      const previousStart = new Date(currentStart);
+      const previousEnd = new Date(currentEnd);
+      previousStart.setMonth(previousStart.getMonth() - 12);
+      previousEnd.setMonth(previousEnd.getMonth() - 12);
+
+      return {
+        startDate: formatDateForQuery(previousStart),
+        endDate: formatDateForQuery(previousEnd),
+      };
+    }
+
+    // Custom or fallback - use same duration immediately preceding the current range
+    const currentStart = toDate(currentStartDate);
+    const currentEnd = toDate(currentEndDate);
+    const dayInMs = 24 * 60 * 60 * 1000;
+    const durationDays = Math.max(
+      1,
+      Math.round((currentEnd.getTime() - currentStart.getTime()) / dayInMs),
+    );
+    const previousEnd = new Date(currentStart.getTime() - dayInMs);
+    const previousStart = new Date(
+      previousEnd.getTime() - (durationDays - 1) * dayInMs,
+    );
+
+    return {
+      startDate: formatDateForQuery(previousStart),
+      endDate: formatDateForQuery(previousEnd),
+    };
+  };
+
   // Click outside handler for dropdowns
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -487,20 +584,9 @@ export default function FinancialOverviewPage() {
         `📊 Current period: ${filteredCurrentTransactions.length} transactions`,
       );
 
-      // Fetch previous period for comparison
-      const prevMonthIndex = monthIndex === 0 ? 11 : monthIndex - 1;
-      const prevYear = monthIndex === 0 ? year - 1 : year;
-      const prevStartDate = `${prevYear}-${String(prevMonthIndex + 1).padStart(2, "0")}-01`;
-
-      const prevDaysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-      let prevLastDay = prevDaysInMonth[prevMonthIndex];
-      if (
-        prevMonthIndex === 1 &&
-        ((prevYear % 4 === 0 && prevYear % 100 !== 0) || prevYear % 400 === 0)
-      ) {
-        prevLastDay = 29;
-      }
-      const prevEndDate = `${prevYear}-${String(prevMonthIndex + 1).padStart(2, "0")}-${String(prevLastDay).padStart(2, "0")}`;
+      // Fetch previous period for comparison using the selected time period
+      const { startDate: comparisonStartDate, endDate: comparisonEndDate } =
+        calculateComparisonRange(startDate, endDate);
 
       let prevQuery = supabase
         .from("journal_entry_lines")
@@ -525,8 +611,8 @@ export default function FinancialOverviewPage() {
           account_behavior
         `,
         )
-        .gte("date", prevStartDate)
-        .lte("date", prevEndDate)
+        .gte("date", comparisonStartDate)
+        .lte("date", comparisonEndDate)
         .order("date", { ascending: true });
 
       if (selectedPropertyList.length > 0) {
@@ -538,12 +624,12 @@ export default function FinancialOverviewPage() {
       const filteredPrevTransactions =
         prevTransactions && !prevError
           ? prevTransactions.filter((tx) =>
-              isDateInRange(tx.date, prevStartDate, prevEndDate),
+              isDateInRange(tx.date, comparisonStartDate, comparisonEndDate),
             )
           : [];
 
       console.log(
-        `📊 Previous period: ${filteredPrevTransactions.length} transactions`,
+        `📊 Previous period (${comparisonStartDate} to ${comparisonEndDate}): ${filteredPrevTransactions.length} transactions`,
       );
 
       // Fetch last 12 months for trend analysis
@@ -1030,20 +1116,23 @@ const processCashFlowTransactions = (transactions: any[]) => {
 
   // Helper functions
   const formatCurrency = (value) => {
+    const numericValue = Number.isFinite(value) ? value : 0;
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      maximumFractionDigits: 0,
-    }).format(value || 0);
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(numericValue);
   };
 
   const formatCompactCurrency = (value) => {
-    if (Math.abs(value) >= 1000000) {
-      return `${(value / 1000000).toFixed(1)}M`;
-    } else if (Math.abs(value) >= 1000) {
-      return `${(value / 1000).toFixed(1)}K`;
+    const numericValue = Number.isFinite(value) ? value : 0;
+    if (Math.abs(numericValue) >= 1000000) {
+      return `${(numericValue / 1000000).toFixed(2)}M`;
+    } else if (Math.abs(numericValue) >= 1000) {
+      return `${(numericValue / 1000).toFixed(2)}K`;
     }
-    return formatCurrency(value);
+    return formatCurrency(numericValue);
   };
 
   const formatPercentage = (value) => {
