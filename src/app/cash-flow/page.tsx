@@ -3268,9 +3268,9 @@ export default function CashFlowPage() {
                           {formatDate(transaction.date)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {transaction.name ||
-                            transaction.vendor ||
+                          {transaction.vendor ||
                             transaction.customer ||
+                            transaction.name ||
                             "N/A"}
                         </td>
                         <td

@@ -2895,9 +2895,10 @@ export default function FinancialsPage() {
                           {formatDateDisplay(transaction.date)}
                         </td>
                           <td className="px-6 py-4 text-sm text-gray-900">
-                            {transaction.name ||
-                              transaction.vendor ||
-                              transaction.class ||
+                            {transaction.vendor ||
+                              transaction.customer ||
+                              transaction.employee ||
+                              transaction.name ||
                               "N/A"}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-500">
