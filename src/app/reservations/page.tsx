@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Download, RefreshCw, Plus, X, ChevronDown, Calendar } from 'lucide-react';
 import MultiSelect from '@/components/MultiSelect';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { supabase } from '@/lib/supabaseClient';
 import { getCurrentMonthRange } from '@/lib/utils';
 
@@ -135,7 +135,7 @@ type NewReservationForm = {
   notes: string;
 };
 
-type ChartMode = 'monthly' | 'seasonal' | 'ytd' | 'current-only' | 'comparison';
+type ChartMode = 'monthly' | 'seasonal' | 'property' | 'ytd' | 'current-only' | 'comparison';
 
 type TimePeriod = 'Monthly' | 'Quarterly' | 'YTD' | 'Trailing 12' | 'Custom';
 
@@ -1134,46 +1134,131 @@ async function connectToAPI() {
   };
 
   const generateRevenueChartData = () => {
-    if (selectedPropertySet.size === 0) return [];
+    if (selectedPropertySet.size === 0 || !activeDateRange) return [];
+
+    const reservationsInRange = filterReservationsByRange(
+      activeDateRange.start,
+      activeDateRange.end
+    );
+
+    if (currentView === 'property') {
+      const propertyTotals: Record<string, number> = {};
+      selectedPropertyNames.forEach((name) => {
+        propertyTotals[name] = 0;
+      });
+
+      reservationsInRange.forEach((reservation) => {
+        if (!selectedPropertySet.has(reservation.property)) return;
+        const value =
+          revenueMetric === 'amount'
+            ? reservation.revenue
+            : getNightsInRange(
+                reservation.checkin,
+                reservation.checkout,
+                activeDateRange.start,
+                activeDateRange.end
+              );
+        propertyTotals[reservation.property] =
+          (propertyTotals[reservation.property] || 0) + value;
+      });
+
+      return Object.entries(propertyTotals)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([property, total]) => ({
+          label: property,
+          value: total,
+          color: getPropertyColor(property),
+        }));
+    }
+
     if (currentView === 'seasonal') {
-      const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
-      const seasonMonths: Record<string, number[]> = {
+      const seasons = ['Winter', 'Spring', 'Summer', 'Fall'] as const;
+      const seasonMonths: Record<(typeof seasons)[number], number[]> = {
         Winter: [11, 0, 1],
         Spring: [2, 3, 4],
         Summer: [5, 6, 7],
-        Fall: [8, 9, 10]
+        Fall: [8, 9, 10],
       };
-      return seasons.map((season) => {
-        const total = currentData.reservations
-          .filter((r) => selectedPropertySet.has(r.property))
-          .filter(r => seasonMonths[season].includes(new Date(r.checkin).getMonth()))
-          .reduce((sum, r) => {
-            return revenueMetric === 'amount'
-              ? sum + r.revenue
-              : sum + toNights(r.checkin, r.checkout);
-          }, 0);
-        return { month: season, value: total };
+
+      const totals = seasons.reduce<Record<string, number>>((acc, season) => {
+        acc[season] = 0;
+        return acc;
+      }, {});
+
+      reservationsInRange.forEach((reservation) => {
+        const checkInMonth = new Date(reservation.checkin).getMonth();
+        const season = seasons.find((s) => seasonMonths[s].includes(checkInMonth));
+        if (!season) return;
+
+        const value =
+          revenueMetric === 'amount'
+            ? reservation.revenue
+            : getNightsInRange(
+                reservation.checkin,
+                reservation.checkout,
+                activeDateRange.start,
+                activeDateRange.end
+              );
+        totals[season] += value;
       });
-    } else {
-      const months = getRolling12Months(
-        monthsList.indexOf(selectedMonth),
-        Number(selectedYear)
-      );
-      return months.map(({ label, monthIndex, year }) => {
-        const total = currentData.reservations
-          .filter((r) => selectedPropertySet.has(r.property))
-          .filter(r => {
-            const d = new Date(r.checkin);
-            return d.getMonth() === monthIndex && d.getFullYear() === year;
-          })
-          .reduce((sum, r) => {
-            return revenueMetric === 'amount'
-              ? sum + r.revenue
-              : sum + getNightsInMonth(r.checkin, r.checkout, monthIndex, year);
-          }, 0);
-        return { month: label, value: total };
-      });
+
+      return seasons
+        .map((season) => ({ label: season, value: totals[season] }))
+        .filter((entry) => entry.value !== 0 || reservationsInRange.length === 0);
     }
+
+    const months: { label: string; monthIndex: number; year: number; start: Date; end: Date }[] = [];
+    const cursor = new Date(
+      activeDateRange.start.getFullYear(),
+      activeDateRange.start.getMonth(),
+      1
+    );
+
+    while (cursor < activeDateRange.end) {
+      const monthStart = new Date(cursor);
+      const monthEnd = new Date(cursor);
+      monthEnd.setMonth(monthEnd.getMonth() + 1);
+
+      months.push({
+        label: `${monthStart.toLocaleString('default', { month: 'short' })} ${monthStart.getFullYear()}`,
+        monthIndex: monthStart.getMonth(),
+        year: monthStart.getFullYear(),
+        start: monthStart,
+        end: monthEnd,
+      });
+
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    return months.map(({ label, monthIndex, year, start, end }) => {
+      const clampedStart = start < activeDateRange.start ? activeDateRange.start : start;
+      const clampedEnd = end > activeDateRange.end ? activeDateRange.end : end;
+
+      const total = reservationsInRange.reduce((sum, reservation) => {
+        if (revenueMetric === 'amount') {
+          const checkinDate = new Date(reservation.checkin);
+          if (
+            checkinDate.getFullYear() !== year ||
+            checkinDate.getMonth() !== monthIndex
+          ) {
+            return sum;
+          }
+          return sum + reservation.revenue;
+        }
+
+        return (
+          sum +
+          getNightsInRange(
+            reservation.checkin,
+            reservation.checkout,
+            clampedStart,
+            clampedEnd
+          )
+        );
+      }, 0);
+
+      return { label, value: total };
+    });
   };
 
   const currentMonthIndex = monthsList.indexOf(selectedMonth);
@@ -1364,6 +1449,7 @@ async function connectToAPI() {
       </div>
     );
   };
+  const revenueChartData = generateRevenueChartData();
   const calendar = generateCalendar();
 
   return (
@@ -1634,15 +1720,26 @@ async function connectToAPI() {
                         >
                           Seasonal
                         </button>
+                        <button
+                          onClick={() => setCurrentView('property')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            currentView === 'property'
+                              ? 'text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          style={{ backgroundColor: currentView === 'property' ? BRAND_COLORS.primary : undefined }}
+                        >
+                          Property
+                        </button>
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="p-6">
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={generateRevenueChartData()} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                    <BarChart data={revenueChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" />
+                      <XAxis dataKey="label" />
                       <YAxis
                         width={80}
                         tickFormatter={(value) =>
@@ -1662,7 +1759,13 @@ async function connectToAPI() {
                         name={revenueMetric === 'amount' ? 'Revenue' : 'Days Booked'}
                         fill={BRAND_COLORS.primary}
                         radius={[4, 4, 0, 0]}
-                      />
+                      >
+                        {currentView === 'property'
+                          ? revenueChartData.map((entry) => (
+                              <Cell key={entry.label} fill={entry.color ?? BRAND_COLORS.primary} />
+                            ))
+                          : null}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
