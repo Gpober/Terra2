@@ -110,7 +110,7 @@ interface PLAccount {
   sub_account: string | null;
   is_sub_account: boolean;
   amount: number;
-  category: "INCOME" | "EXPENSES";
+  category: "INCOME" | "COGS" | "EXPENSES";
   account_type: string;
   transactions: FinancialTransaction[];
 }
@@ -175,16 +175,6 @@ const getMonthYear = (dateString: string) => {
     "December",
   ];
   return `${monthNames[month - 1]} ${year}`;
-};
-
-// Compare dates as strings (YYYY-MM-DD format)
-const isDateInRange = (
-  dateString: string,
-  startDate: string,
-  endDate: string,
-): boolean => {
-  const { dateOnly } = getDateParts(dateString);
-  return dateOnly >= startDate && dateOnly <= endDate;
 };
 
 // Format date for display without timezone conversion
@@ -438,45 +428,14 @@ export default function FinancialsPage() {
   };
 
   // CORRECTED: P&L Classification using account_type field
-  const classifyPLAccount = (
-    accountType: string,
-    accountName: string,
-    reportCategory: string,
-  ) => {
-    const typeLower = accountType?.toLowerCase() || "";
-    const nameLower = accountName?.toLowerCase() || "";
-    const categoryLower = reportCategory?.toLowerCase() || "";
+  const classifyPLAccount = (accountType: string) => {
+    const type = accountType?.toLowerCase() || "";
 
-    // Exclude transfers and cash accounts first
-    const isTransfer =
-      categoryLower === "transfer" || nameLower.includes("transfer");
-    const isCashAccount =
-      typeLower.includes("bank") ||
-      typeLower.includes("cash") ||
-      nameLower.includes("checking") ||
-      nameLower.includes("savings") ||
-      nameLower.includes("cash");
+    if (type.includes("income")) return "INCOME" as const;
+    if (type === "cost of goods sold") return "COGS" as const;
+    if (type.includes("expense")) return "EXPENSES" as const;
 
-    if (isCashAccount || isTransfer) return null;
-
-    // INCOME ACCOUNTS - Based on account_type
-    const isIncomeAccount =
-      typeLower === "income" ||
-      typeLower === "other income" ||
-      typeLower.includes("income") ||
-      typeLower.includes("revenue");
-
-    // EXPENSE ACCOUNTS - Based on account_type
-    const isExpenseAccount =
-      typeLower === "expenses" ||
-      typeLower === "other expense" ||
-      typeLower === "cost of goods sold" ||
-      typeLower.includes("expense");
-
-    if (isIncomeAccount) return "INCOME";
-    if (isExpenseAccount) return "EXPENSES";
-
-    return null; // Not a P&L account (likely Balance Sheet account)
+    return null; // Exclude non-P&L accounts
   };
 
   // Load available properties for filter dropdown
@@ -580,44 +539,34 @@ export default function FinancialsPage() {
       if (error) throw error;
 
       smartLog(`📊 Fetched ${allTransactions.length} total transactions`);
+      console.log("Transactions from Supabase:", allTransactions.length);
 
-      // Filter transactions using TIMEZONE-INDEPENDENT date comparison
-      const filteredTransactions = allTransactions.filter((tx) => {
-        return isDateInRange(tx.date, startDate, endDate);
-      });
-
-      smartLog(
-        `📅 After timezone-independent date filtering: ${filteredTransactions.length} transactions`,
-      );
-      smartLog(`📅 Date range check: ${startDate} to ${endDate}`);
-      smartLog(
-        `📅 Sample dates:`,
-        filteredTransactions.slice(0, 5).map((tx) => ({
-          original: tx.date,
-          dateOnly: getDateParts(tx.date).dateOnly,
-          monthYear: getMonthYear(tx.date),
-          formatted: formatDateDisplay(tx.date),
-        })),
-      );
-
-      // Filter for P&L accounts using enhanced classification
-      const plTransactions = filteredTransactions.filter((tx) => {
-        const classification = classifyPLAccount(
-          tx.account_type,
-          tx.account,
-          tx.report_category,
-        );
+      // Filter for P&L accounts using simple classification
+      const plTransactions = allTransactions.filter((tx) => {
+        const classification = classifyPLAccount(tx.account_type);
         return classification !== null;
-      });
+      }) as FinancialTransaction[];
 
       smartLog(`📈 Filtered to ${plTransactions.length} P&L transactions`);
       smartLog(`🔍 Sample P&L transactions:`, plTransactions.slice(0, 5));
+      console.log("After P&L filter:", plTransactions.length);
 
       // Process transactions using ENHANCED logic
-      const processedAccounts = await processPLTransactionsEnhanced(
-        plTransactions,
-      );
+      const processedAccounts = processPLTransactionsEnhanced(plTransactions);
       setPlAccounts(processedAccounts);
+
+      const totalIncomeLog = processedAccounts
+        .filter((acc) => acc.category === "INCOME")
+        .reduce((sum, acc) => sum + acc.amount, 0);
+      const totalCogsLog = processedAccounts
+        .filter((acc) => acc.category === "COGS")
+        .reduce((sum, acc) => sum + acc.amount, 0);
+      const totalExpensesLog = processedAccounts
+        .filter((acc) => acc.category === "EXPENSES")
+        .reduce((sum, acc) => sum + acc.amount, 0);
+      console.log("Total Income:", totalIncomeLog);
+      console.log("Total COGS:", totalCogsLog);
+      console.log("Total Expenses:", totalExpensesLog);
 
       smartLog(
         `✅ Processed ${processedAccounts.length} P&L accounts using timezone-independent strategy`,
@@ -671,14 +620,10 @@ export default function FinancialsPage() {
       (acc) => acc.category === "INCOME",
     );
     const cogsAccounts = plAccounts.filter(
-      (acc) =>
-        acc.category === "EXPENSES" &&
-        acc.account_type?.toLowerCase().includes("cost of goods sold"),
+      (acc) => acc.category === "COGS",
     );
     const expenseAccounts = plAccounts.filter(
-      (acc) =>
-        acc.category === "EXPENSES" &&
-        !acc.account_type?.toLowerCase().includes("cost of goods sold"),
+      (acc) => acc.category === "EXPENSES",
     );
 
     const header = ["Account", ...months, "Total"];
@@ -893,14 +838,10 @@ export default function FinancialsPage() {
       (acc) => acc.category === "INCOME",
     );
     const cogsAccounts = plAccounts.filter(
-      (acc) =>
-        acc.category === "EXPENSES" &&
-        acc.account_type?.toLowerCase().includes("cost of goods sold"),
+      (acc) => acc.category === "COGS",
     );
     const expenseAccounts = plAccounts.filter(
-      (acc) =>
-        acc.category === "EXPENSES" &&
-        !acc.account_type?.toLowerCase().includes("cost of goods sold"),
+      (acc) => acc.category === "EXPENSES",
     );
 
     const totalIncomeArr: number[] = [];
@@ -953,125 +894,75 @@ export default function FinancialsPage() {
   };
 
   // ENHANCED: Process transactions with improved calculation logic
-  const processPLTransactionsEnhanced = async (
-    transactions: any[],
-  ): Promise<PLAccount[]> => {
+  const processPLTransactionsEnhanced = (
+    transactions: FinancialTransaction[],
+  ): PLAccount[] => {
     const accountMap = new Map<string, PLAccount>();
 
-    smartLog(
-      `🔄 Processing ${transactions.length} P&L transactions with timezone-independent strategy`,
-    );
-
-    // Group transactions by account (EXACTLY like SQL GROUP BY)
-    const accountGroups = new Map<string, any[]>();
-
     transactions.forEach((tx) => {
-      const account = tx.account;
-      if (!accountGroups.has(account)) {
-        accountGroups.set(account, []);
+      const classification = classifyPLAccount(tx.account_type);
+      if (!classification) return;
+
+      const debitParsed = tx.debit
+        ? Number.parseFloat(tx.debit.toString())
+        : 0;
+      const creditParsed = tx.credit
+        ? Number.parseFloat(tx.credit.toString())
+        : 0;
+      const debitValue = isNaN(debitParsed) ? 0 : debitParsed;
+      const creditValue = isNaN(creditParsed) ? 0 : creditParsed;
+
+      const amountChange =
+        classification === "INCOME"
+          ? creditValue - debitValue
+          : debitValue - creditValue;
+
+      const accountName = tx.account || "Unknown Account";
+      const parts = accountName.split(":");
+      const parentAccount = parts[0]?.trim() || accountName;
+      const subAccount =
+        parts.length > 1 ? parts.slice(1).join(":").trim() || null : null;
+
+      if (!accountMap.has(accountName)) {
+        accountMap.set(accountName, {
+          account: accountName,
+          parent_account: parentAccount,
+          sub_account: subAccount,
+          is_sub_account: subAccount !== null,
+          amount: 0,
+          category: classification,
+          account_type: tx.account_type,
+          transactions: [],
+        });
       }
-      accountGroups.get(account)!.push(tx);
+
+      const accountData = accountMap.get(accountName)!;
+      accountData.amount += amountChange;
+      accountData.transactions.push(tx);
     });
 
-    smartLog(`📊 Grouped into ${accountGroups.size} unique accounts`);
+    const accounts = Array.from(accountMap.values()).filter(
+      (acc) => Math.abs(acc.amount) > 0.01,
+    );
 
-    // Process each account group using ENHANCED calculation
-    for (const [account, txList] of accountGroups.entries()) {
-      const sampleTx = txList[0];
-      const accountType = sampleTx.account_type;
-      const reportCategory = sampleTx.report_category;
-
-      // Calculate totals using ENHANCED logic with proper null handling
-      let totalCredits = 0;
-      let totalDebits = 0;
-
-      txList.forEach((tx) => {
-        // Parse debit and credit values more carefully
-        const debitValue = tx.debit
-          ? Number.parseFloat(tx.debit.toString())
-          : 0;
-        const creditValue = tx.credit
-          ? Number.parseFloat(tx.credit.toString())
-          : 0;
-
-        // Only add if values are valid numbers
-        if (!isNaN(debitValue) && debitValue > 0) {
-          totalDebits += debitValue;
-        }
-        if (!isNaN(creditValue) && creditValue > 0) {
-          totalCredits += creditValue;
-        }
-      });
-
-      // Determine category and amount using ENHANCED classification
-      const classification = classifyPLAccount(
-        accountType,
-        account,
-        reportCategory,
-      );
-      if (!classification) continue; // Skip non-P&L accounts
-
-      let amount: number;
-      if (classification === "INCOME") {
-        // For income accounts: Credits increase income, debits decrease income
-        amount = totalCredits - totalDebits;
-      } else {
-        // For expense accounts: Debits increase expenses, credits decrease expenses
-        amount = totalDebits - totalCredits;
-      }
-
-      // Skip if no activity (HAVING clause equivalent) - but allow small negative adjustments
-      if (Math.abs(amount) <= 0.01) continue;
-
-      // Parse parent/sub structure EXACTLY like before
-      let parentAccount: string;
-      let subAccount: string | null;
-      let isSubAccount: boolean;
-
-      if (account.includes(":")) {
-        const parts = account.split(":");
-        parentAccount = parts[0].trim();
-        subAccount = parts[1]?.trim() || null;
-        isSubAccount = true;
-      } else {
-        parentAccount = account;
-        subAccount = null;
-        isSubAccount = false;
-      }
-
-      smartLog(
-        `💰 Account: ${account}, Classification: ${classification}, Amount: ${amount}, Credits: ${totalCredits}, Debits: ${totalDebits}`,
-      );
-
-      accountMap.set(account, {
-        account,
-        parent_account: parentAccount,
-        sub_account: subAccount,
-        is_sub_account: isSubAccount,
-        amount,
-        category: classification,
-        account_type: accountType,
-        transactions: txList,
-      });
-    }
-
-    // Convert to array and sort by alphabetical order instead of amount
-    const accounts = Array.from(accountMap.values());
-
-    // Sort: INCOME first (alphabetically), then EXPENSES (alphabetically)
     accounts.sort((a, b) => {
       if (a.category !== b.category) {
-        return a.category === "INCOME" ? -1 : 1;
+        if (a.category === "INCOME") return -1;
+        if (b.category === "INCOME") return 1;
+        if (a.category === "COGS" && b.category === "EXPENSES") return -1;
+        if (a.category === "EXPENSES" && b.category === "COGS") return 1;
       }
-      // Sort alphabetically by account name within each category
       return a.account.localeCompare(b.account);
     });
 
     smartLog(
-      `✅ Final result: ${accounts.length} P&L accounts processed with timezone-independent strategy`,
+      `✅ Final result: ${accounts.length} P&L accounts processed with simplified strategy`,
     );
     smartLog(
       `📊 Income accounts: ${accounts.filter((a) => a.category === "INCOME").length}`,
+    );
+    smartLog(
+      `📊 COGS accounts: ${accounts.filter((a) => a.category === "COGS").length}`,
     );
     smartLog(
       `📊 Expense accounts: ${accounts.filter((a) => a.category === "EXPENSES").length}`,
@@ -1110,16 +1001,8 @@ export default function FinancialsPage() {
   // Group accounts for display
   const getGroupedAccounts = () => {
     const income = plAccounts.filter((acc) => acc.category === "INCOME");
-    const cogs = plAccounts.filter(
-      (acc) =>
-        acc.category === "EXPENSES" &&
-        acc.account_type?.toLowerCase().includes("cost of goods sold"),
-    );
-    const expenses = plAccounts.filter(
-      (acc) =>
-        acc.category === "EXPENSES" &&
-        !acc.account_type?.toLowerCase().includes("cost of goods sold"),
-    );
+    const cogs = plAccounts.filter((acc) => acc.category === "COGS");
+    const expenses = plAccounts.filter((acc) => acc.category === "EXPENSES");
 
     // Group parent/sub accounts
     const groupedIncome = groupParentSubAccounts(income);
@@ -1133,100 +1016,32 @@ export default function FinancialsPage() {
     };
   };
 
-  const getTransactionKey = (tx: FinancialTransaction) => {
-    if (tx.id) return tx.id;
-    const debitValue = tx.debit ? tx.debit.toString() : "";
-    const creditValue = tx.credit ? tx.credit.toString() : "";
-    return `${tx.entry_number}-${tx.line_sequence}-${tx.account}-${debitValue}-${creditValue}-${tx.date}`;
-  };
-
-  const dedupeTransactions = (transactions: FinancialTransaction[]) => {
-    const unique = new Map<string, FinancialTransaction>();
-    transactions.forEach((tx) => {
-      const key = getTransactionKey(tx);
-      if (!unique.has(key)) {
-        unique.set(key, tx);
-      }
-    });
-    return Array.from(unique.values());
-  };
-
-  const mergeAccountTransactions = (
-    parent?: PLAccount | null,
-    subAccounts?: PLAccount[],
-  ) => {
-    const unique = new Map<string, FinancialTransaction>();
-
-    const addTransactions = (transactions: FinancialTransaction[] = []) => {
-      transactions.forEach((tx) => {
-        const key = getTransactionKey(tx);
-        if (!unique.has(key)) {
-          unique.set(key, tx);
-        }
-      });
-    };
-
-    if (parent) {
-      addTransactions(parent.transactions);
-    }
-
-    if (subAccounts) {
-      subAccounts.forEach((sub) => addTransactions(sub.transactions));
-    }
-
-    return Array.from(unique.values());
-  };
-
-  const calculateAmountFromTransactions = (
-    category: PLAccount["category"],
-    transactions: FinancialTransaction[],
-  ) => {
-    return transactions.reduce((sum, tx) => {
-      const debitValue = tx.debit ? Number.parseFloat(tx.debit.toString()) : 0;
-      const creditValue = tx.credit
-        ? Number.parseFloat(tx.credit.toString())
-        : 0;
-
-      return category === "INCOME"
-        ? sum + (creditValue - debitValue)
-        : sum + (debitValue - creditValue);
-    }, 0);
-  };
-
-  // Group parent and sub accounts together - MODIFIED to show combined totals when collapsed
+  // Group parent and sub accounts together - show combined totals when collapsed
   const groupParentSubAccounts = (accounts: PLAccount[]) => {
     const parentMap = new Map<
       string,
-      { parent: PLAccount | null; subs: PLAccount[] }
+      { parent?: PLAccount; subs: PLAccount[] }
     >();
-    const regularAccounts: PLAccount[] = [];
 
-    // First pass: identify parents and subs
     accounts.forEach((acc) => {
-      if (acc.is_sub_account) {
-        if (!parentMap.has(acc.parent_account)) {
-          parentMap.set(acc.parent_account, { parent: null, subs: [] });
-        }
-        parentMap.get(acc.parent_account)!.subs.push(acc);
-      } else {
-        // Check if this account has sub-accounts
-        const hasSubs = accounts.some(
-          (other) =>
-            other.is_sub_account && other.parent_account === acc.account,
-        );
-
-        if (hasSubs) {
-          if (!parentMap.has(acc.account)) {
-            parentMap.set(acc.account, { parent: null, subs: [] });
-          }
-          parentMap.get(acc.account)!.parent = acc;
-        } else {
-          regularAccounts.push(acc);
-        }
+      if (acc.is_sub_account && acc.parent_account) {
+        const group = parentMap.get(acc.parent_account) || {
+          parent: undefined,
+          subs: [],
+        };
+        group.subs.push(acc);
+        parentMap.set(acc.parent_account, group);
+        return;
       }
+
+      const group = parentMap.get(acc.account) || {
+        parent: undefined,
+        subs: [],
+      };
+      group.parent = acc;
+      parentMap.set(acc.account, group);
     });
 
-    // Create final grouped structure
     const result: Array<{
       account: PLAccount;
       subAccounts?: PLAccount[];
@@ -1234,126 +1049,52 @@ export default function FinancialsPage() {
       parentAmount: number;
     }> = [];
 
-    // Add parent accounts with their subs
     for (const [parentName, group] of parentMap.entries()) {
-      if (group.parent) {
-        const sortedSubs = group.subs
-          .map((sub) => {
-            const uniqueSubTransactions = dedupeTransactions(sub.transactions);
-            const subAmount = calculateAmountFromTransactions(
-              sub.category,
-              uniqueSubTransactions,
-            );
-            return {
-              ...sub,
-              transactions: uniqueSubTransactions,
-              amount: subAmount,
-            };
-          })
-          .sort((a, b) => a.account.localeCompare(b.account));
+      const sortedSubs = group.subs
+        .slice()
+        .sort((a, b) => a.account.localeCompare(b.account));
 
-        const allSubTransactions = sortedSubs.flatMap((sub) => sub.transactions);
-        const subTransactionKeys = new Set(
-          allSubTransactions.map((tx) => getTransactionKey(tx)),
-        );
+      let parentAccount = group.parent ?? null;
+      const parentAmount = parentAccount ? parentAccount.amount : 0;
+      const combinedAmount =
+        parentAmount + sortedSubs.reduce((sum, sub) => sum + sub.amount, 0);
 
-        const uniqueParentTransactions = dedupeTransactions(
-          group.parent.transactions,
-        );
-        const parentOnlyTransactions = uniqueParentTransactions.filter(
-          (tx) => !subTransactionKeys.has(getTransactionKey(tx)),
-        );
-        const parentAmount = calculateAmountFromTransactions(
-          group.parent.category,
-          parentOnlyTransactions,
-        );
-
-        const adjustedParent: PLAccount = {
-          ...group.parent,
-          transactions: parentOnlyTransactions,
-          amount: parentAmount,
-        };
-
-        const combinedTransactions = mergeAccountTransactions(
-          adjustedParent,
-          sortedSubs,
-        );
-        const combinedAmount = calculateAmountFromTransactions(
-          adjustedParent.category,
-          combinedTransactions,
-        );
-
-        result.push({
-          account: adjustedParent,
-          subAccounts: sortedSubs,
-          combinedAmount,
-          parentAmount,
-        });
-      } else {
-        // Orphaned sub-accounts (create virtual parent)
-        const sortedSubs = group.subs
-          .map((sub) => {
-            const uniqueSubTransactions = dedupeTransactions(sub.transactions);
-            const subAmount = calculateAmountFromTransactions(
-              sub.category,
-              uniqueSubTransactions,
-            );
-            return {
-              ...sub,
-              transactions: uniqueSubTransactions,
-              amount: subAmount,
-            };
-          })
-          .sort((a, b) => a.account.localeCompare(b.account));
-
-        const combinedTransactions = mergeAccountTransactions(
-          null,
-          sortedSubs,
-        );
-        const combinedAmount = calculateAmountFromTransactions(
-          sortedSubs[0].category,
-          combinedTransactions,
-        );
-
-        const virtualParent: PLAccount = {
+      if (!parentAccount) {
+        const fallbackCategory = sortedSubs[0]?.category ?? "EXPENSES";
+        parentAccount = {
           account: parentName,
           parent_account: parentName,
           sub_account: null,
           is_sub_account: false,
-          amount: 0,
-          category: group.subs[0].category,
-          account_type: group.subs[0].account_type,
+          amount: parentAmount,
+          category: fallbackCategory,
+          account_type: sortedSubs[0]?.account_type ?? "",
           transactions: [],
         };
-
-        result.push({
-          account: virtualParent,
-          subAccounts: sortedSubs,
-          combinedAmount,
-          parentAmount: 0,
-        });
       }
+
+      result.push({
+        account: parentAccount,
+        subAccounts: sortedSubs.length > 0 ? sortedSubs : undefined,
+        combinedAmount,
+        parentAmount,
+      });
     }
 
-    // Add regular accounts
-    regularAccounts.forEach((acc) => {
-      const uniqueTransactions = dedupeTransactions(acc.transactions);
-      const recalculatedAmount = calculateAmountFromTransactions(
-        acc.category,
-        uniqueTransactions,
+    accounts.forEach((acc) => {
+      if (acc.is_sub_account) return;
+      const exists = result.some(
+        (group) => group.account.account === acc.account,
       );
-      result.push({
-        account: {
-          ...acc,
-          transactions: uniqueTransactions,
-          amount: recalculatedAmount,
-        },
-        combinedAmount: recalculatedAmount,
-        parentAmount: recalculatedAmount,
-      });
+      if (!exists) {
+        result.push({
+          account: acc,
+          combinedAmount: acc.amount,
+          parentAmount: acc.amount,
+        });
+      }
     });
 
-    // Sort by alphabetical order instead of amount (descending by absolute value)
     return result.sort((a, b) =>
       a.account.account.localeCompare(b.account.account),
     );
@@ -1422,11 +1163,14 @@ export default function FinancialsPage() {
     isParentCombined = false,
     subAccounts?: PLAccount[],
   ) => {
-    let transactions = account.transactions;
+    let transactions = account.transactions || [];
 
-    // If this is a combined parent view, include sub-account transactions (deduplicated)
+    // If this is a combined parent view, include sub-account transactions
     if (isParentCombined && subAccounts) {
-      transactions = mergeAccountTransactions(account, subAccounts);
+      transactions = [
+        ...(account.transactions || []),
+        ...subAccounts.flatMap((sub) => sub.transactions || []),
+      ];
     }
 
     if (viewMode === "Property") {
@@ -1501,11 +1245,16 @@ export default function FinancialsPage() {
     subAccounts?: PLAccount[],
   ) => {
     const targetAccount = subAccount || account;
-    let transactions = targetAccount.transactions || [];
+    let transactions = targetAccount.transactions
+      ? [...targetAccount.transactions]
+      : [];
 
     // If this is a combined parent view, include sub-account transactions
     if (isParentCombined && subAccounts && !subAccount) {
-      transactions = mergeAccountTransactions(account, subAccounts);
+      transactions = [
+        ...(account.transactions || []),
+        ...subAccounts.flatMap((sub) => sub.transactions || []),
+      ];
     }
 
     // Filter by period if specified (Detail view) - TIMEZONE INDEPENDENT
