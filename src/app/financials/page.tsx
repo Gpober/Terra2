@@ -157,6 +157,38 @@ const getDateParts = (dateString: string) => {
   return { year, month, day, dateOnly };
 };
 
+// Determine number of days in a given month/year without Date object
+const getDaysInMonth = (year: number, month: number) => {
+  const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (
+    month === 2 &&
+    ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0)
+  ) {
+    return 29;
+  }
+  return daysInMonth[month - 1];
+};
+
+// Calculate the exclusive end date boundary (next day) as YYYY-MM-DD string
+const getExclusiveEndDate = (endDate: string) => {
+  const { year, month, day } = getDateParts(endDate);
+  let nextYear = year;
+  let nextMonth = month;
+  let nextDay = day + 1;
+
+  const daysInCurrentMonth = getDaysInMonth(year, month);
+  if (nextDay > daysInCurrentMonth) {
+    nextDay = 1;
+    nextMonth += 1;
+    if (nextMonth > 12) {
+      nextMonth = 1;
+      nextYear += 1;
+    }
+  }
+
+  return `${nextYear}-${String(nextMonth).padStart(2, "0")}-${String(nextDay).padStart(2, "0")}`;
+};
+
 // Get month name from date string without timezone issues
 const getMonthYear = (dateString: string) => {
   const { year, month } = getDateParts(dateString);
@@ -181,10 +213,10 @@ const getMonthYear = (dateString: string) => {
 const isDateInRange = (
   dateString: string,
   startDate: string,
-  endDate: string,
+  endDateExclusive: string,
 ): boolean => {
   const { dateOnly } = getDateParts(dateString);
-  return dateOnly >= startDate && dateOnly <= endDate;
+  return dateOnly >= startDate && dateOnly < endDateExclusive;
 };
 
 // Format date for display without timezone conversion
@@ -524,6 +556,7 @@ export default function FinancialsPage() {
 
     try {
       const { startDate, endDate } = calculateDateRange();
+      const endDateExclusive = getExclusiveEndDate(endDate);
       const propertyList = Array.from(selectedProperties);
 
       smartLog(`🔍 TIMEZONE-INDEPENDENT P&L DATA FETCH`);
@@ -583,7 +616,7 @@ export default function FinancialsPage() {
 
       // Filter transactions using TIMEZONE-INDEPENDENT date comparison
       const filteredTransactions = allTransactions.filter((tx) => {
-        return isDateInRange(tx.date, startDate, endDate);
+        return isDateInRange(tx.date, startDate, endDateExclusive);
       });
 
       smartLog(
