@@ -1133,6 +1133,66 @@ export default function FinancialsPage() {
     };
   };
 
+  const getTransactionKey = (tx: FinancialTransaction) => {
+    if (tx.id) return tx.id;
+    const debitValue = tx.debit ? tx.debit.toString() : "";
+    const creditValue = tx.credit ? tx.credit.toString() : "";
+    return `${tx.entry_number}-${tx.line_sequence}-${tx.account}-${debitValue}-${creditValue}-${tx.date}`;
+  };
+
+  const dedupeTransactions = (transactions: FinancialTransaction[]) => {
+    const unique = new Map<string, FinancialTransaction>();
+    transactions.forEach((tx) => {
+      const key = getTransactionKey(tx);
+      if (!unique.has(key)) {
+        unique.set(key, tx);
+      }
+    });
+    return Array.from(unique.values());
+  };
+
+  const mergeAccountTransactions = (
+    parent?: PLAccount | null,
+    subAccounts?: PLAccount[],
+  ) => {
+    const unique = new Map<string, FinancialTransaction>();
+
+    const addTransactions = (transactions: FinancialTransaction[] = []) => {
+      transactions.forEach((tx) => {
+        const key = getTransactionKey(tx);
+        if (!unique.has(key)) {
+          unique.set(key, tx);
+        }
+      });
+    };
+
+    if (parent) {
+      addTransactions(parent.transactions);
+    }
+
+    if (subAccounts) {
+      subAccounts.forEach((sub) => addTransactions(sub.transactions));
+    }
+
+    return Array.from(unique.values());
+  };
+
+  const calculateAmountFromTransactions = (
+    category: PLAccount["category"],
+    transactions: FinancialTransaction[],
+  ) => {
+    return transactions.reduce((sum, tx) => {
+      const debitValue = tx.debit ? Number.parseFloat(tx.debit.toString()) : 0;
+      const creditValue = tx.credit
+        ? Number.parseFloat(tx.credit.toString())
+        : 0;
+
+      return category === "INCOME"
+        ? sum + (creditValue - debitValue)
+        : sum + (debitValue - creditValue);
+    }, 0);
+  };
+
   // Group parent and sub accounts together - MODIFIED to show combined totals when collapsed
   const groupParentSubAccounts = (accounts: PLAccount[]) => {
     const parentMap = new Map<
@@ -1171,79 +1231,125 @@ export default function FinancialsPage() {
       account: PLAccount;
       subAccounts?: PLAccount[];
       combinedAmount: number;
+      parentAmount: number;
     }> = [];
 
     // Add parent accounts with their subs
     for (const [parentName, group] of parentMap.entries()) {
       if (group.parent) {
-        // Calculate combined amount using all unique transactions to avoid double counting
-        const combinedTransactions = [
-          ...group.parent.transactions,
-          ...group.subs.flatMap((sub) => sub.transactions),
-        ];
+        const sortedSubs = group.subs
+          .map((sub) => {
+            const uniqueSubTransactions = dedupeTransactions(sub.transactions);
+            const subAmount = calculateAmountFromTransactions(
+              sub.category,
+              uniqueSubTransactions,
+            );
+            return {
+              ...sub,
+              transactions: uniqueSubTransactions,
+              amount: subAmount,
+            };
+          })
+          .sort((a, b) => a.account.localeCompare(b.account));
 
-        const combinedAmount = combinedTransactions.reduce((sum, tx) => {
-          const debitValue = tx.debit
-            ? Number.parseFloat(tx.debit.toString())
-            : 0;
-          const creditValue = tx.credit
-            ? Number.parseFloat(tx.credit.toString())
-            : 0;
-          return group.parent!.category === "INCOME"
-            ? sum + (creditValue - debitValue)
-            : sum + (debitValue - creditValue);
-        }, 0);
+        const allSubTransactions = sortedSubs.flatMap((sub) => sub.transactions);
+        const subTransactionKeys = new Set(
+          allSubTransactions.map((tx) => getTransactionKey(tx)),
+        );
+
+        const uniqueParentTransactions = dedupeTransactions(
+          group.parent.transactions,
+        );
+        const parentOnlyTransactions = uniqueParentTransactions.filter(
+          (tx) => !subTransactionKeys.has(getTransactionKey(tx)),
+        );
+        const parentAmount = calculateAmountFromTransactions(
+          group.parent.category,
+          parentOnlyTransactions,
+        );
+
+        const adjustedParent: PLAccount = {
+          ...group.parent,
+          transactions: parentOnlyTransactions,
+          amount: parentAmount,
+        };
+
+        const combinedTransactions = mergeAccountTransactions(
+          adjustedParent,
+          sortedSubs,
+        );
+        const combinedAmount = calculateAmountFromTransactions(
+          adjustedParent.category,
+          combinedTransactions,
+        );
 
         result.push({
-          account: group.parent,
-          subAccounts: group.subs.sort((a, b) =>
-            a.account.localeCompare(b.account),
-          ),
+          account: adjustedParent,
+          subAccounts: sortedSubs,
           combinedAmount,
+          parentAmount,
         });
       } else {
         // Orphaned sub-accounts (create virtual parent)
-        const combinedTransactions = group.subs.flatMap(
-          (sub) => sub.transactions,
+        const sortedSubs = group.subs
+          .map((sub) => {
+            const uniqueSubTransactions = dedupeTransactions(sub.transactions);
+            const subAmount = calculateAmountFromTransactions(
+              sub.category,
+              uniqueSubTransactions,
+            );
+            return {
+              ...sub,
+              transactions: uniqueSubTransactions,
+              amount: subAmount,
+            };
+          })
+          .sort((a, b) => a.account.localeCompare(b.account));
+
+        const combinedTransactions = mergeAccountTransactions(
+          null,
+          sortedSubs,
         );
-        const combinedAmount = combinedTransactions.reduce((sum, tx) => {
-          const debitValue = tx.debit
-            ? Number.parseFloat(tx.debit.toString())
-            : 0;
-          const creditValue = tx.credit
-            ? Number.parseFloat(tx.credit.toString())
-            : 0;
-          return group.subs[0].category === "INCOME"
-            ? sum + (creditValue - debitValue)
-            : sum + (debitValue - creditValue);
-        }, 0);
+        const combinedAmount = calculateAmountFromTransactions(
+          sortedSubs[0].category,
+          combinedTransactions,
+        );
 
         const virtualParent: PLAccount = {
           account: parentName,
           parent_account: parentName,
           sub_account: null,
           is_sub_account: false,
-          amount: combinedAmount,
+          amount: 0,
           category: group.subs[0].category,
           account_type: group.subs[0].account_type,
-          transactions: combinedTransactions,
+          transactions: [],
         };
 
         result.push({
           account: virtualParent,
-          subAccounts: group.subs.sort((a, b) =>
-            a.account.localeCompare(b.account),
-          ),
+          subAccounts: sortedSubs,
           combinedAmount,
+          parentAmount: 0,
         });
       }
     }
 
     // Add regular accounts
     regularAccounts.forEach((acc) => {
+      const uniqueTransactions = dedupeTransactions(acc.transactions);
+      const recalculatedAmount = calculateAmountFromTransactions(
+        acc.category,
+        uniqueTransactions,
+      );
       result.push({
-        account: acc,
-        combinedAmount: acc.amount,
+        account: {
+          ...acc,
+          transactions: uniqueTransactions,
+          amount: recalculatedAmount,
+        },
+        combinedAmount: recalculatedAmount,
+        parentAmount: recalculatedAmount,
       });
     });
 
@@ -1318,12 +1424,9 @@ export default function FinancialsPage() {
   ) => {
     let transactions = account.transactions;
 
-    // If this is a combined parent view, include sub-account transactions
+    // If this is a combined parent view, include sub-account transactions (deduplicated)
     if (isParentCombined && subAccounts) {
-      transactions = [
-        ...account.transactions,
-        ...subAccounts.flatMap((sub) => sub.transactions),
-      ];
+      transactions = mergeAccountTransactions(account, subAccounts);
     }
 
     if (viewMode === "Property") {
@@ -1402,17 +1505,7 @@ export default function FinancialsPage() {
 
     // If this is a combined parent view, include sub-account transactions
     if (isParentCombined && subAccounts && !subAccount) {
-      transactions = [
-        ...account.transactions,
-        ...subAccounts.flatMap((sub) => sub.transactions),
-      ];
-    }
-
-    // If this is a parent account being clicked (not a sub-account), show only its own transactions when expanded
-    if (!subAccount && !isParentCombined && account.transactions) {
-      transactions = account.transactions.filter(
-        (tx) => tx.account === account.account,
-      );
+      transactions = mergeAccountTransactions(account, subAccounts);
     }
 
     // Filter by period if specified (Detail view) - TIMEZONE INDEPENDENT
@@ -2102,7 +2195,7 @@ export default function FinancialsPage() {
                               >
                                 {formatCurrency(
                                   expandedAccounts.has(group.account.account)
-                                    ? group.account.amount // Individual amount when expanded
+                                    ? group.parentAmount // Individual amount when expanded
                                     : group.combinedAmount, // Combined amount when collapsed
                                 )}
                               </button>
@@ -2318,7 +2411,7 @@ export default function FinancialsPage() {
                               >
                                 {formatCurrency(
                                   expandedAccounts.has(group.account.account)
-                                    ? group.account.amount // Individual amount when expanded
+                                    ? group.parentAmount // Individual amount when expanded
                                     : group.combinedAmount, // Combined amount when collapsed
                                 )}
                               </button>
@@ -2650,7 +2743,7 @@ export default function FinancialsPage() {
                               >
                                 {formatCurrency(
                                   expandedAccounts.has(group.account.account)
-                                    ? group.account.amount // Individual amount when expanded
+                                    ? group.parentAmount // Individual amount when expanded
                                     : group.combinedAmount, // Combined amount when collapsed
                                 )}
                               </button>
