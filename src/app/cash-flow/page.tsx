@@ -792,7 +792,9 @@ export default function CashFlowPage() {
 
       let query = supabase
         .from("journal_entry_lines")
-        .select("entry_number,date,entry_bank_account,debit,credit,report_category,class")
+        .select(
+          "entry_number,date,entry_bank_account,debit,credit,report_category,class,memo,name",
+        )
         .gte("date", startDate)
         .lte("date", endDate)
         .eq("is_cash_account", true)
