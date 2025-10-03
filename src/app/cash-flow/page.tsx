@@ -40,8 +40,6 @@ interface TransactionDetail {
   impact: number
   bankAccount?: string
   entryNumber?: string
-  customer?: string
-  vendor?: string
   class?: string
   name?: string
   accountType?: string
@@ -878,7 +876,7 @@ export default function CashFlowPage() {
     let viewQuery = supabase
       .from("cash_related_offsets")
       .select(
-        "entry_number,date,class,account,account_type,report_category,debit,credit,cash_effect,cash_bank_account,memo,name,customer,vendor",
+        "entry_number,date,class,account,account_type,report_category,debit,credit,cash_effect,cash_bank_account,memo,name",
       )
       .gte("date", startDate)
       .lte("date", endDate)
@@ -948,7 +946,7 @@ export default function CashFlowPage() {
     const offsetQuery = supabase
       .from("journal_entry_lines")
       .select(
-        "entry_number,date,class,account,account_type,report_category,debit,credit,memo,name,customer,vendor",
+        "entry_number,date,class,account,account_type,report_category,debit,credit,memo,name",
       )
       .in("entry_number", entryNumbers)
       .eq("is_cash_account", false)
@@ -1188,8 +1186,6 @@ export default function CashFlowPage() {
         credit: Number.parseFloat(tx.credit) || 0,
         impact: tx.cashFlowImpact,
         entryNumber: tx.entry_number,
-        customer: tx.customer,
-        vendor: tx.vendor,
         name: tx.name,
         class: tx.class,
         bankAccount: tx.entry_bank_account,
@@ -1229,8 +1225,6 @@ export default function CashFlowPage() {
         credit: Number.parseFloat(tx.credit) || 0,
         impact: tx.cashFlowImpact,
         entryNumber: tx.entry_number,
-        customer: tx.customer,
-        vendor: tx.vendor,
         name: tx.name,
         class: tx.class,
         bankAccount: tx.entry_bank_account,
@@ -1379,8 +1373,6 @@ export default function CashFlowPage() {
         accountType: row.account_type,
         reportCategory: row.report_category,
         entryNumber: row.entry_number,
-        customer: row.customer,
-        vendor: row.vendor,
         name: row.name,
         class: row.class,
       }))
@@ -3247,7 +3239,7 @@ export default function CashFlowPage() {
                         Date
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Payee/Customer
+                        Name
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Memo
@@ -3271,10 +3263,7 @@ export default function CashFlowPage() {
                           {formatDate(transaction.date)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {transaction.name ||
-                            transaction.vendor ||
-                            transaction.customer ||
-                            "N/A"}
+                          {transaction.name || "N/A"}
                         </td>
                         <td
                           className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate"
