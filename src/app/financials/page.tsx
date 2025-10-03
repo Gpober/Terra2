@@ -2853,7 +2853,7 @@ export default function FinancialsPage() {
                         Date
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Payee/Customer
+                        Name
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Memo
@@ -2897,7 +2897,7 @@ export default function FinancialsPage() {
                           <td className="px-6 py-4 text-sm text-gray-900">
                             {transaction.name ||
                               transaction.vendor ||
-                              transaction.class ||
+                              transaction.employee ||
                               "N/A"}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-500">
