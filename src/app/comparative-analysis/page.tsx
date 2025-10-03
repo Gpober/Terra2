@@ -49,6 +49,28 @@ type KPIs = {
   netIncome: number;
 };
 
+type ReservationRecord = {
+  id: string;
+  checkIn: string;
+  checkOut: string;
+  guest: string | null;
+  property: string | null;
+  source: string | null;
+  revenue: number;
+  nights: number;
+};
+
+type ReservationMetrics = {
+  bookings: number;
+  totalRevenue: number;
+  totalNights: number;
+  avgLengthOfStay: number;
+  avgNightlyRate: number;
+  avgRevenuePerBooking: number;
+  properties: number;
+  reservations: ReservationRecord[];
+};
+
 type Insight = {
   type: 'positive' | 'negative' | 'neutral' | 'warning';
   title: string;
@@ -75,6 +97,10 @@ export default function EnhancedComparativeAnalysis() {
   const [error, setError] = useState<string | null>(null);
   const [allLinesA, setAllLinesA] = useState<any[]>([]);
   const [allLinesB, setAllLinesB] = useState<any[]>([]);
+  const [reservationDataA, setReservationDataA] =
+    useState<ReservationMetrics | null>(null);
+  const [reservationDataB, setReservationDataB] =
+    useState<ReservationMetrics | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
   const [modalTransactions, setModalTransactions] = useState<any[]>([]);
@@ -136,6 +162,58 @@ export default function EnhancedComparativeAnalysis() {
     return data || [];
   };
 
+  const fetchReservations = async (
+    start: string,
+    end: string,
+    propertiesFilter?: string[],
+  ) => {
+    let query = supabase
+      .from("reservations")
+      .select(
+        "id, reservation_id, check_in, check_out, guest, qbo_listing, source, net_income",
+      )
+      .gte("check_in", start)
+      .lte("check_in", end)
+      .not("qbo_listing", "is", null);
+
+    if (propertiesFilter && propertiesFilter.length > 0) {
+      query = query.in("qbo_listing", propertiesFilter);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    const reservations: ReservationRecord[] = (data || []).map((row: any) => {
+      const checkIn = row.check_in ?? "";
+      const checkOut = row.check_out ?? "";
+      const revenue = Number(row.net_income) || 0;
+      const startDate = checkIn ? new Date(checkIn) : null;
+      const endDate = checkOut ? new Date(checkOut) : null;
+      const nights =
+        startDate && endDate
+          ? Math.max(
+              0,
+              (endDate.getTime() - startDate.getTime()) /
+                (1000 * 60 * 60 * 24),
+            )
+          : 0;
+
+      return {
+        id: String(row.reservation_id || row.id || ""),
+        checkIn,
+        checkOut,
+        guest: row.guest ?? null,
+        property: row.qbo_listing ?? null,
+        source: row.source ?? null,
+        revenue,
+        nights,
+      };
+    });
+
+    return reservations;
+  };
+
   const computeKPIs = (lines: any[]): KPIs => {
     let revenue = 0, cogs = 0, opEx = 0;
     lines.forEach((l) => {
@@ -154,15 +232,48 @@ export default function EnhancedComparativeAnalysis() {
     return { revenue, cogs, grossProfit, opEx, netIncome };
   };
 
-  const generateInsights = (dataA: KPIs, dataB: KPIs, labelA: string, labelB: string): Insight[] => {
-    const insights: Insight[] = [];
-    
+  const computeReservationMetrics = (
+    reservations: ReservationRecord[],
+  ): ReservationMetrics => {
+    const bookings = reservations.length;
+    const totalRevenue = reservations.reduce((sum, r) => sum + r.revenue, 0);
+    const totalNights = reservations.reduce((sum, r) => sum + r.nights, 0);
+    const avgLengthOfStay = bookings ? totalNights / bookings : 0;
+    const avgNightlyRate = totalNights ? totalRevenue / totalNights : 0;
+    const avgRevenuePerBooking = bookings ? totalRevenue / bookings : 0;
+    const properties = new Set(
+      reservations.map((r) => r.property).filter(Boolean) as string[],
+    ).size;
+
+    return {
+      bookings,
+      totalRevenue,
+      totalNights,
+      avgLengthOfStay,
+      avgNightlyRate,
+      avgRevenuePerBooking,
+      properties,
+      reservations,
+    };
+  };
+
+  const generateInsights = (
+    dataA: KPIs,
+    dataB: KPIs,
+    labelA: string,
+    labelB: string,
+    reservationsA?: ReservationMetrics | null,
+    reservationsB?: ReservationMetrics | null,
+  ): Insight[] => {
+    const baseInsights: Insight[] = [];
+    const reservationInsights: Insight[] = [];
+
     // Revenue comparison - focus on dollar amounts
     const revDifference = dataA.revenue - dataB.revenue;
     if (Math.abs(revDifference) > 10000) { // Only show if difference is meaningful ($10k+)
       const winner = revDifference > 0 ? labelA : labelB;
       const loser = revDifference > 0 ? labelB : labelA;
-      insights.push({
+      baseInsights.push({
         type: revDifference > 0 ? 'positive' : 'negative',
         title: `${winner} Outperforming in Revenue`,
         description: `${winner} generated ${formatCurrency(Math.abs(revDifference))} more revenue than ${loser}. This represents a significant performance gap that should be investigated.`,
@@ -175,7 +286,7 @@ export default function EnhancedComparativeAnalysis() {
     if (Math.abs(profitDifference) > 5000) { // Only show if difference is meaningful ($5k+)
       const winner = profitDifference > 0 ? labelA : labelB;
       const loser = profitDifference > 0 ? labelB : labelA;
-      insights.push({
+      baseInsights.push({
         type: profitDifference > 0 ? 'positive' : 'negative',
         title: `${winner} More Profitable`,
         description: `${winner} made ${formatCurrency(Math.abs(profitDifference))} more profit than ${loser}. This shows ${winner} is operating more efficiently or has better cost control.`,
@@ -188,7 +299,7 @@ export default function EnhancedComparativeAnalysis() {
     if (Math.abs(expenseDifference) > 5000) { // Only show if difference is meaningful ($5k+)
       const moreEfficient = expenseDifference < 0 ? labelA : labelB;
       const lessEfficient = expenseDifference < 0 ? labelB : labelA;
-      insights.push({
+      baseInsights.push({
         type: 'neutral',
         title: `${moreEfficient} Operating More Efficiently`,
         description: `${moreEfficient} spent ${formatCurrency(Math.abs(expenseDifference))} less on operating expenses than ${lessEfficient}. This cost advantage contributes to better profitability.`,
@@ -201,7 +312,7 @@ export default function EnhancedComparativeAnalysis() {
     if (Math.abs(grossProfitDifference) > 10000) { // Only show if difference is meaningful ($10k+)
       const winner = grossProfitDifference > 0 ? labelA : labelB;
       const loser = grossProfitDifference > 0 ? labelB : labelA;
-      insights.push({
+      baseInsights.push({
         type: grossProfitDifference > 0 ? 'positive' : 'warning',
         title: `${winner} Generating More Gross Profit`,
         description: `${winner} achieved ${formatCurrency(Math.abs(grossProfitDifference))} more gross profit than ${loser}. This indicates better pricing, lower costs, or higher sales volume.`,
@@ -209,7 +320,42 @@ export default function EnhancedComparativeAnalysis() {
       });
     }
 
-    return insights.slice(0, 3); // Keep top 3 insights
+    if (reservationsA && reservationsB) {
+      const bookingDifference = reservationsA.bookings - reservationsB.bookings;
+      if (Math.abs(bookingDifference) >= 5) {
+        const bookingLeader = bookingDifference > 0 ? labelA : labelB;
+        reservationInsights.push({
+          type: bookingDifference > 0 ? 'positive' : 'negative',
+          title: `${bookingLeader} Winning on Bookings`,
+          description: `${bookingLeader} secured ${Math.abs(bookingDifference)} more reservations than the other period, indicating stronger demand or conversion.`,
+          impact:
+            Math.abs(bookingDifference) > 25
+              ? 'high'
+              : Math.abs(bookingDifference) > 10
+              ? 'medium'
+              : 'low',
+        });
+      }
+
+      const reservationRevenueDiff =
+        reservationsA.totalRevenue - reservationsB.totalRevenue;
+      if (Math.abs(reservationRevenueDiff) > 5000) {
+        const revenueLeader = reservationRevenueDiff > 0 ? labelA : labelB;
+        reservationInsights.push({
+          type: reservationRevenueDiff > 0 ? 'positive' : 'negative',
+          title: `${revenueLeader} Reservation Revenue Advantage`,
+          description: `${revenueLeader} generated ${formatCurrency(Math.abs(reservationRevenueDiff))} more reservation revenue, pointing to pricing strength or higher occupancy.`,
+          impact:
+            Math.abs(reservationRevenueDiff) > 40000
+              ? 'high'
+              : Math.abs(reservationRevenueDiff) > 20000
+              ? 'medium'
+              : 'low',
+        });
+      }
+    }
+
+    return [...baseInsights, ...reservationInsights].slice(0, 4);
   };
 
   const aggregateWeekly = (linesA: any[], linesB: any[]) => {
@@ -332,23 +478,40 @@ export default function EnhancedComparativeAnalysis() {
 
     setLoading(true);
     setError(null);
+    setReservationDataA(null);
+    setReservationDataB(null);
     try {
       const classFilter =
         selectedClasses.size > 0 ? Array.from(selectedClasses) : undefined;
-      const [linesA, linesB] = await Promise.all([
+      const [linesA, linesB, reservationsA, reservationsB] = await Promise.all([
         fetchLines(startA, endA, classFilter),
         fetchLines(startB, endB, classFilter),
+        fetchReservations(startA, endA, classFilter),
+        fetchReservations(startB, endB, classFilter),
       ]);
 
       const kpiA = computeKPIs(linesA);
       const kpiB = computeKPIs(linesB);
+      const reservationMetricsA = computeReservationMetrics(reservationsA);
+      const reservationMetricsB = computeReservationMetrics(reservationsB);
       setDataA(kpiA);
       setDataB(kpiB);
+      setReservationDataA(reservationMetricsA);
+      setReservationDataB(reservationMetricsB);
       setVarianceRows(computeVarianceTable(linesA, linesB));
       setWeeklyData(aggregateWeekly(linesA, linesB));
       setAllLinesA(linesA);
       setAllLinesB(linesB);
-      setInsights(generateInsights(kpiA, kpiB, labelA, labelB));
+      setInsights(
+        generateInsights(
+          kpiA,
+          kpiB,
+          labelA,
+          labelB,
+          reservationMetricsA,
+          reservationMetricsB,
+        ),
+      );
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -412,6 +575,53 @@ export default function EnhancedComparativeAnalysis() {
         gpVarPct !== null ? (gpVarPct * 100).toFixed(2) + "%" : "",
       ].join(","),
     );
+
+    if (reservationDataA && reservationDataB) {
+      lines.push("", "RESERVATIONS METRICS,,,,");
+      const rows = [
+        {
+          label: "Bookings",
+          a: reservationDataA.bookings,
+          b: reservationDataB.bookings,
+        },
+        {
+          label: "Reservation Revenue",
+          a: reservationDataA.totalRevenue,
+          b: reservationDataB.totalRevenue,
+          currency: true,
+        },
+        {
+          label: "Nights Booked",
+          a: reservationDataA.totalNights,
+          b: reservationDataB.totalNights,
+        },
+        {
+          label: "Avg Stay (nights)",
+          a: reservationDataA.avgLengthOfStay,
+          b: reservationDataB.avgLengthOfStay,
+        },
+        {
+          label: "Avg Nightly Rate",
+          a: reservationDataA.avgNightlyRate,
+          b: reservationDataB.avgNightlyRate,
+          currency: true,
+        },
+      ];
+
+      rows.forEach((row) => {
+        const variance = row.a - row.b;
+        const variancePct = row.b ? variance / Math.abs(row.b) : null;
+        lines.push(
+          [
+            row.label,
+            row.currency ? row.a.toFixed(2) : row.a.toString(),
+            row.currency ? row.b.toFixed(2) : row.b.toString(),
+            row.currency ? variance.toFixed(2) : variance.toString(),
+            variancePct !== null ? (variancePct * 100).toFixed(2) + "%" : "",
+          ].join(","),
+        );
+      });
+    }
     const csv = header + lines.join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -437,6 +647,17 @@ export default function EnhancedComparativeAnalysis() {
     return `${sign}${abs.toFixed(1)}%`;
   };
 
+  const formatNumber = (value: number) => {
+    return new Intl.NumberFormat("en-US").format(Math.round(value));
+  };
+
+  const formatDecimal = (value: number, digits = 1) => {
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(value);
+  };
+
   const getChangeColor = (value: number) => {
     if (value > 0) return 'text-green-600';
     if (value < 0) return 'text-red-600';
@@ -447,6 +668,54 @@ export default function EnhancedComparativeAnalysis() {
     if (value > 0) return <TrendingUp className="w-4 h-4" />;
     if (value < 0) return <TrendingDown className="w-4 h-4" />;
     return null;
+  };
+
+  const renderComparisonRow = (
+    label: string,
+    valueA: number,
+    valueB: number,
+    options?: {
+      formatter?: (value: number) => string;
+      inverse?: boolean;
+      showPlus?: boolean;
+    },
+  ) => {
+    const change = valueA - valueB;
+    const changePercent = valueB !== 0 ? (change / Math.abs(valueB)) * 100 : 0;
+    const formatter = options?.formatter ?? ((v: number) => formatNumber(v));
+    const formattedVariance = formatter(change);
+    const varianceLabel = options?.showPlus
+      ? `${change >= 0 ? "+" : ""}${formattedVariance}`
+      : formattedVariance;
+
+    return (
+      <div key={label} className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-medium text-gray-600">{label}</h3>
+          <div
+            className={`flex items-center gap-1 ${getChangeColor(options?.inverse ? -change : change)}`}
+          >
+            {getChangeIcon(options?.inverse ? -change : change)}
+            <span className="text-xs font-medium">{formatPercentage(changePercent)}</span>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <p className="text-xs text-gray-500 mb-1">{labelA}</p>
+            <p className="text-xl font-bold text-gray-900">{formatter(valueA)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 mb-1">{labelB}</p>
+            <p className="text-sm text-gray-600">{formatter(valueB)}</p>
+          </div>
+          <div className="pt-2 border-t border-gray-100">
+            <p className="text-xs text-gray-500 mb-1">Variance</p>
+            <p className={`text-sm font-medium ${getChangeColor(options?.inverse ? -change : change)}`}>{varianceLabel}</p>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -604,6 +873,75 @@ export default function EnhancedComparativeAnalysis() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {reservationDataA && reservationDataB && (
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Reservation Performance</h2>
+              <p className="text-sm text-gray-600">
+                Track booking activity alongside financial metrics for a complete operating view.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+              <span>
+                <span className="font-semibold text-gray-900">{formatNumber(reservationDataA.bookings)}</span>
+                {" "}bookings across {labelA}
+              </span>
+              <span>
+                <span className="font-semibold text-gray-900">{formatNumber(reservationDataB.bookings)}</span>
+                {" "}bookings across {labelB}
+              </span>
+              <span>
+                <span className="font-semibold text-gray-900">{formatNumber(reservationDataA.properties)}</span>
+                {" "}active properties in {labelA}
+              </span>
+              <span>
+                <span className="font-semibold text-gray-900">{formatNumber(reservationDataB.properties)}</span>
+                {" "}active properties in {labelB}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-6">
+            {renderComparisonRow("Bookings", reservationDataA.bookings, reservationDataB.bookings, {
+              formatter: (value) => formatNumber(value),
+              showPlus: true,
+            })}
+            {renderComparisonRow(
+              "Reservation Revenue",
+              reservationDataA.totalRevenue,
+              reservationDataB.totalRevenue,
+              { formatter: (value) => formatCurrency(value) },
+            )}
+            {renderComparisonRow("Nights Booked", reservationDataA.totalNights, reservationDataB.totalNights, {
+              formatter: (value) => formatNumber(value),
+              showPlus: true,
+            })}
+            {renderComparisonRow(
+              "Avg Stay (nights)",
+              reservationDataA.avgLengthOfStay,
+              reservationDataB.avgLengthOfStay,
+              {
+                formatter: (value) => formatDecimal(value, 1),
+                showPlus: true,
+              },
+            )}
+            {renderComparisonRow(
+              "Avg Nightly Rate",
+              reservationDataA.avgNightlyRate,
+              reservationDataB.avgNightlyRate,
+              { formatter: (value) => formatCurrency(value) },
+            )}
+            {renderComparisonRow(
+              "Avg Revenue / Booking",
+              reservationDataA.avgRevenuePerBooking,
+              reservationDataB.avgRevenuePerBooking,
+              { formatter: (value) => formatCurrency(value) },
+            )}
+          </div>
         </div>
       )}
 
