@@ -4,6 +4,7 @@ import { Download, RefreshCw, Plus, X, ChevronDown, Calendar } from 'lucide-reac
 import MultiSelect from '@/components/MultiSelect';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { supabase } from '@/lib/supabaseClient';
+import { getCurrentMonthRange } from '@/lib/utils';
 
 // Constants
 const BRAND_COLORS = {
@@ -136,6 +137,13 @@ type NewReservationForm = {
 
 type ChartMode = 'monthly' | 'seasonal' | 'ytd' | 'current-only' | 'comparison';
 
+type TimePeriod = 'Monthly' | 'Quarterly' | 'YTD' | 'Trailing 12' | 'Custom';
+
+type DateRange = {
+  start: Date;
+  end: Date;
+};
+
 // Helpers
 const slugify = (qbo_listing: string): string =>
   qbo_listing.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -178,12 +186,30 @@ const getNightsInRange = (
   return diff > 0 ? diff / (1000 * 60 * 60 * 24) : 0;
 };
 
-  const calculateKPIsFromReservations = (
-    reservations: Reservation[],
-    propertyCount: number,
-    monthIndex: number,
-    year: number
-  ): KPIs => {
+const parseDateInput = (value: string): Date | null => {
+  if (!value) return null;
+  const [yearStr, monthStr, dayStr] = value.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+
+  if (
+    Number.isNaN(year) ||
+    Number.isNaN(month) ||
+    Number.isNaN(day)
+  ) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day);
+};
+
+const calculateKPIsFromReservations = (
+  reservations: Reservation[],
+  propertyCount: number,
+  monthIndex: number,
+  year: number
+): KPIs => {
   const totalRevenue = reservations.reduce((sum, r) => sum + r.revenue, 0);
   const totalNights = reservations.reduce(
     (sum, r) => sum + getNightsInMonth(r.checkin, r.checkout, monthIndex, year),
@@ -462,7 +488,9 @@ const ReservationsTab: React.FC = () => {
   const [notification, setNotification] = useState<NotificationState>({ show: false, message: '', type: 'info' });
   const [calendarTooltip, setCalendarTooltip] = useState<TooltipState>({ show: false, content: '', x: 0, y: 0 });
   const [occupancyChartMode, setOccupancyChartMode] = useState<ChartMode>('current-only');
-  const [timePeriod, setTimePeriod] = useState<'Monthly' | 'YTD'>('Monthly');
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>('Monthly');
+  const [customStartDate, setCustomStartDate] = useState<string>(() => getCurrentMonthRange().start);
+  const [customEndDate, setCustomEndDate] = useState<string>(() => getCurrentMonthRange().end);
   const [revenueMetric, setRevenueMetric] = useState<'amount' | 'nights'>('amount');
   const [newReservationForm, setNewReservationForm] = useState<NewReservationForm>({
     guestName: '',
@@ -716,14 +744,8 @@ async function connectToAPI() {
   );
 
   const getFilteredReservations = (): Reservation[] => {
-    const monthIndex = monthsList.indexOf(selectedMonth);
-    const year = Number(selectedYear);
-
-    if (monthIndex < 0) return [];
-
-    const monthStart = new Date(year, monthIndex, 1);
-    const monthEnd = new Date(year, monthIndex + 1, 1);
-    return filterReservationsByRange(monthStart, monthEnd);
+    if (!activeDateRange) return [];
+    return filterReservationsByRange(activeDateRange.start, activeDateRange.end);
   };
   // Backend data loading function
   const loadFromSupabase = async (): Promise<void> => {
@@ -1159,37 +1181,99 @@ async function connectToAPI() {
   const previousYearNumber = currentYearNumber - 1;
   const currentYearLabel = currentYearNumber.toString();
   const previousYearLabel = previousYearNumber.toString();
-  const kpiPeriod = timePeriod === 'YTD' ? 'ytd' : 'monthly';
+  const activeDateRange = useMemo<DateRange | null>(() => {
+    if (timePeriod === 'Custom') {
+      const startDate = parseDateInput(customStartDate);
+      const endDate = parseDateInput(customEndDate);
+      if (!startDate || !endDate || startDate > endDate) {
+        return null;
+      }
+      const exclusiveEnd = new Date(endDate);
+      exclusiveEnd.setDate(exclusiveEnd.getDate() + 1);
+      return { start: startDate, end: exclusiveEnd };
+    }
 
-  const kpis = useMemo(() => {
     if (currentMonthIndex < 0) {
-      return EMPTY_KPIS;
-    }
-
-    if (kpiPeriod === 'ytd') {
-      const start = new Date(currentYearNumber, 0, 1);
-      const end = new Date(currentYearNumber, currentMonthIndex + 1, 1);
-      const reservations = filterReservationsByRange(start, end);
-      return calculateKPIsForRange(reservations, selectedPropertySet.size, start, end);
-    }
-
-    const monthStart = new Date(currentYearNumber, currentMonthIndex, 1);
-    const monthEnd = new Date(currentYearNumber, currentMonthIndex + 1, 1);
-    const reservations = filterReservationsByRange(monthStart, monthEnd);
-    return calculateKPIsFromReservations(
-      reservations,
-      selectedPropertySet.size,
-      currentMonthIndex,
-      currentYearNumber
-    );
-  }, [currentMonthIndex, currentYearNumber, filterReservationsByRange, kpiPeriod, selectedPropertySet.size]);
-
-  const comparisonData = useMemo<KPIComparisonData | null>(() => {
-    if (currentMonthIndex < 0 || selectedPropertySet.size === 0) {
       return null;
     }
 
-    if (kpiPeriod === 'ytd') {
+    if (timePeriod === 'Monthly') {
+      return {
+        start: new Date(currentYearNumber, currentMonthIndex, 1),
+        end: new Date(currentYearNumber, currentMonthIndex + 1, 1),
+      };
+    }
+
+    if (timePeriod === 'YTD') {
+      return {
+        start: new Date(currentYearNumber, 0, 1),
+        end: new Date(currentYearNumber, currentMonthIndex + 1, 1),
+      };
+    }
+
+    if (timePeriod === 'Quarterly') {
+      const quarterStartMonth = Math.floor(currentMonthIndex / 3) * 3;
+      return {
+        start: new Date(currentYearNumber, quarterStartMonth, 1),
+        end: new Date(currentYearNumber, quarterStartMonth + 3, 1),
+      };
+    }
+
+    if (timePeriod === 'Trailing 12') {
+      const end = new Date(currentYearNumber, currentMonthIndex + 1, 1);
+      const start = new Date(end);
+      start.setMonth(start.getMonth() - 12);
+      return { start, end };
+    }
+
+    return null;
+  }, [customEndDate, customStartDate, currentMonthIndex, currentYearNumber, timePeriod]);
+
+  const kpis = useMemo(() => {
+    if (!activeDateRange) {
+      return EMPTY_KPIS;
+    }
+
+    const reservations = filterReservationsByRange(activeDateRange.start, activeDateRange.end);
+
+    if (timePeriod === 'Monthly' && currentMonthIndex >= 0) {
+      return calculateKPIsFromReservations(
+        reservations,
+        selectedPropertySet.size,
+        currentMonthIndex,
+        currentYearNumber
+      );
+    }
+
+    return calculateKPIsForRange(
+      reservations,
+      selectedPropertySet.size,
+      activeDateRange.start,
+      activeDateRange.end
+    );
+  }, [activeDateRange, currentMonthIndex, currentYearNumber, filterReservationsByRange, selectedPropertySet.size, timePeriod]);
+
+  const comparisonData = useMemo<KPIComparisonData | null>(() => {
+    if (!activeDateRange || selectedPropertySet.size === 0) {
+      return null;
+    }
+
+    if (timePeriod === 'Monthly' && currentMonthIndex >= 0) {
+      const prevMonthIndex = (currentMonthIndex + 11) % 12;
+      const prevYear = prevMonthIndex === 11 ? currentYearNumber - 1 : currentYearNumber;
+      const start = new Date(prevYear, prevMonthIndex, 1);
+      const end = new Date(prevYear, prevMonthIndex + 1, 1);
+      const reservations = filterReservationsByRange(start, end);
+      const previous = calculateKPIsFromReservations(
+        reservations,
+        selectedPropertySet.size,
+        prevMonthIndex,
+        prevYear
+      );
+      return { label: 'vs last month', previous };
+    }
+
+    if (timePeriod === 'YTD' && currentMonthIndex >= 0) {
       const previousYear = currentYearNumber - 1;
       const start = new Date(previousYear, 0, 1);
       const end = new Date(previousYear, currentMonthIndex + 1, 1);
@@ -1198,19 +1282,38 @@ async function connectToAPI() {
       return { label: 'vs prior YTD', previous };
     }
 
-    const prevMonthIndex = (currentMonthIndex + 11) % 12;
-    const prevYear = prevMonthIndex === 11 ? currentYearNumber - 1 : currentYearNumber;
-    const start = new Date(prevYear, prevMonthIndex, 1);
-    const end = new Date(prevYear, prevMonthIndex + 1, 1);
-    const reservations = filterReservationsByRange(start, end);
-    const previous = calculateKPIsFromReservations(
-      reservations,
-      selectedPropertySet.size,
-      prevMonthIndex,
-      prevYear
-    );
-    return { label: 'vs last month', previous };
-  }, [currentMonthIndex, currentYearNumber, filterReservationsByRange, kpiPeriod, selectedPropertySet.size]);
+    if (timePeriod === 'Quarterly') {
+      const previousStart = new Date(activeDateRange.start);
+      previousStart.setMonth(previousStart.getMonth() - 3);
+      const previousEnd = new Date(activeDateRange.end);
+      previousEnd.setMonth(previousEnd.getMonth() - 3);
+      const reservations = filterReservationsByRange(previousStart, previousEnd);
+      const previous = calculateKPIsForRange(
+        reservations,
+        selectedPropertySet.size,
+        previousStart,
+        previousEnd
+      );
+      return { label: 'vs prior quarter', previous };
+    }
+
+    if (timePeriod === 'Trailing 12') {
+      const previousStart = new Date(activeDateRange.start);
+      previousStart.setFullYear(previousStart.getFullYear() - 1);
+      const previousEnd = new Date(activeDateRange.end);
+      previousEnd.setFullYear(previousEnd.getFullYear() - 1);
+      const reservations = filterReservationsByRange(previousStart, previousEnd);
+      const previous = calculateKPIsForRange(
+        reservations,
+        selectedPropertySet.size,
+        previousStart,
+        previousEnd
+      );
+      return { label: 'vs prior 12 months', previous };
+    }
+
+    return null;
+  }, [activeDateRange, currentMonthIndex, currentYearNumber, filterReservationsByRange, selectedPropertySet.size, timePeriod]);
 
   const kpiComparisons = useMemo<KPIComparisonResult | null>(() => {
     if (!comparisonData) return null;
@@ -1298,12 +1401,25 @@ async function connectToAPI() {
                 </button>
                 {timePeriodDropdownOpen && (
                   <div className="absolute z-10 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg">
-                    {(['Monthly', 'YTD'] as const).map((period) => (
+                    {(
+                      [
+                        'Monthly',
+                        'Quarterly',
+                        'YTD',
+                        'Trailing 12',
+                        'Custom',
+                      ] as TimePeriod[]
+                    ).map((period) => (
                       <button
                         key={period}
                         onClick={() => {
                           setTimePeriod(period);
                           setTimePeriodDropdownOpen(false);
+                          if (period === 'Custom') {
+                            const { start, end } = getCurrentMonthRange();
+                            setCustomStartDate(start);
+                            setCustomEndDate(end);
+                          }
                         }}
                         className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
                       >
@@ -1314,59 +1430,86 @@ async function connectToAPI() {
                 )}
               </div>
 
-              <div className="relative" ref={monthDropdownRef}>
-                <button
-                  onClick={() => setMonthDropdownOpen(!monthDropdownOpen)}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
-                  style={{ '--tw-ring-color': `${BRAND_COLORS.primary}33` } as React.CSSProperties}
-                >
-                  {selectedMonth}
-                  <ChevronDown className="w-4 h-4 ml-2" />
-                </button>
-                {monthDropdownOpen && (
-                  <div className="absolute z-10 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {monthsList.map((month) => (
-                      <button
-                        key={month}
-                        onClick={() => {
-                          setSelectedMonth(month);
-                          setMonthDropdownOpen(false);
-                        }}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
-                      >
-                        {month}
-                      </button>
-                    ))}
+              {(timePeriod === 'Monthly' ||
+                timePeriod === 'Quarterly' ||
+                timePeriod === 'YTD' ||
+                timePeriod === 'Trailing 12') && (
+                <>
+                  <div className="relative" ref={monthDropdownRef}>
+                    <button
+                      onClick={() => setMonthDropdownOpen(!monthDropdownOpen)}
+                      className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                      style={{ '--tw-ring-color': `${BRAND_COLORS.primary}33` } as React.CSSProperties}
+                    >
+                      {selectedMonth}
+                      <ChevronDown className="w-4 h-4 ml-2" />
+                    </button>
+                    {monthDropdownOpen && (
+                      <div className="absolute z-10 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {monthsList.map((month) => (
+                          <button
+                            key={month}
+                            onClick={() => {
+                              setSelectedMonth(month);
+                              setMonthDropdownOpen(false);
+                            }}
+                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                          >
+                            {month}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div className="relative" ref={yearDropdownRef}>
-                <button
-                  onClick={() => setYearDropdownOpen(!yearDropdownOpen)}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
-                  style={{ '--tw-ring-color': `${BRAND_COLORS.primary}33` } as React.CSSProperties}
-                >
-                  {selectedYear}
-                  <ChevronDown className="w-4 h-4 ml-2" />
-                </button>
-                {yearDropdownOpen && (
-                  <div className="absolute z-10 mt-1 w-32 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {yearsList.map((year) => (
-                      <button
-                        key={year}
-                        onClick={() => {
-                          setSelectedYear(year);
-                          setYearDropdownOpen(false);
-                        }}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
-                      >
-                        {year}
-                      </button>
-                    ))}
+                  <div className="relative" ref={yearDropdownRef}>
+                    <button
+                      onClick={() => setYearDropdownOpen(!yearDropdownOpen)}
+                      className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                      style={{ '--tw-ring-color': `${BRAND_COLORS.primary}33` } as React.CSSProperties}
+                    >
+                      {selectedYear}
+                      <ChevronDown className="w-4 h-4 ml-2" />
+                    </button>
+                    {yearDropdownOpen && (
+                      <div className="absolute z-10 mt-1 w-32 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {yearsList.map((year) => (
+                          <button
+                            key={year}
+                            onClick={() => {
+                              setSelectedYear(year);
+                              setYearDropdownOpen(false);
+                            }}
+                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                          >
+                            {year}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </>
+              )}
+
+              {timePeriod === 'Custom' && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-500 focus:outline-none focus:ring-2 transition-all"
+                    style={{ '--tw-ring-color': `${BRAND_COLORS.primary}33` } as React.CSSProperties}
+                  />
+                  <span className="text-gray-500">to</span>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:border-blue-500 focus:outline-none focus:ring-2 transition-all"
+                    style={{ '--tw-ring-color': `${BRAND_COLORS.primary}33` } as React.CSSProperties}
+                  />
+                </div>
+              )}
 
               <MultiSelect
                 options={currentData.properties.map((p) => ({
