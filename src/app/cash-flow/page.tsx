@@ -613,6 +613,7 @@ export default function CashFlowPage() {
     if (
       typeLower === "income" ||
       typeLower === "other income" ||
+      typeLower === "other expense" ||
       typeLower === "expenses" ||
       typeLower === "expense" ||
       typeLower === "cost of goods sold" ||
