@@ -442,36 +442,88 @@ export default function FinancialsPage() {
     accountType: string,
     accountName: string,
     reportCategory: string,
+    detailType: string | null,
+    accountBehavior: string | null,
+    isCashAccountFlag: boolean | null,
   ) => {
     const typeLower = accountType?.toLowerCase() || "";
     const nameLower = accountName?.toLowerCase() || "";
     const categoryLower = reportCategory?.toLowerCase() || "";
+    const detailLower = detailType?.toLowerCase() || "";
+    const behaviorLower = accountBehavior?.toLowerCase() || "";
 
-    // Exclude transfers and cash accounts first
+    const containsAny = (value: string, keywords: string[]) =>
+      keywords.some((keyword) => value.includes(keyword));
+
+    // Exclude transfers and true cash/bank accounts first so that
+    // balance sheet activity never bleeds into the P&L.
     const isTransfer =
-      categoryLower === "transfer" || nameLower.includes("transfer");
+      categoryLower === "transfer" ||
+      nameLower.includes("transfer") ||
+      detailLower.includes("transfer");
+
+    const cashTypeKeywords = [
+      "bank",
+      "cash",
+      "checking",
+      "savings",
+      "money market",
+      "undeposited funds",
+    ];
+    const cashDetailKeywords = [
+      "cash on hand",
+      "petty cash",
+      "bank",
+      "checking",
+      "savings",
+      "money market",
+      "undeposited funds",
+    ];
+
+    const incomeIndicators = [
+      "income",
+      "revenue",
+      "sales",
+      "gain",
+    ];
+    const expenseIndicators = [
+      "expense",
+      "expenses",
+      "cost of goods sold",
+      "cogs",
+      "loss",
+    ];
+
+    const isCashByType = containsAny(typeLower, cashTypeKeywords);
+    const isCashByDetail = containsAny(detailLower, cashDetailKeywords);
+    const isCashByName =
+      containsAny(nameLower, cashTypeKeywords) &&
+      !containsAny(nameLower, incomeIndicators) &&
+      !containsAny(nameLower, expenseIndicators);
     const isCashAccount =
-      typeLower.includes("bank") ||
-      typeLower.includes("cash") ||
-      nameLower.includes("checking") ||
-      nameLower.includes("savings") ||
-      nameLower.includes("cash");
+      Boolean(isCashAccountFlag) || isCashByType || isCashByDetail || isCashByName;
 
-    if (isCashAccount || isTransfer) return null;
+    if (isTransfer || isCashAccount) return null;
 
-    // INCOME ACCOUNTS - Based on account_type
+    // Determine classification using multiple metadata points so all
+    // revenue and expense activity is captured consistently with the cash
+    // flow statement.
     const isIncomeAccount =
-      typeLower === "income" ||
-      typeLower === "other income" ||
-      typeLower.includes("income") ||
-      typeLower.includes("revenue");
+      containsAny(typeLower, incomeIndicators) ||
+      containsAny(categoryLower, incomeIndicators) ||
+      containsAny(detailLower, incomeIndicators) ||
+      containsAny(nameLower, incomeIndicators) ||
+      behaviorLower === "income" ||
+      behaviorLower === "revenue";
 
-    // EXPENSE ACCOUNTS - Based on account_type
     const isExpenseAccount =
-      typeLower === "expenses" ||
-      typeLower === "other expense" ||
-      typeLower === "cost of goods sold" ||
-      typeLower.includes("expense");
+      containsAny(typeLower, expenseIndicators) ||
+      containsAny(categoryLower, expenseIndicators) ||
+      containsAny(detailLower, expenseIndicators) ||
+      containsAny(nameLower, expenseIndicators) ||
+      behaviorLower === "expense" ||
+      behaviorLower === "cost of goods sold" ||
+      behaviorLower === "cogs";
 
     if (isIncomeAccount) return "INCOME";
     if (isExpenseAccount) return "EXPENSES";
@@ -606,6 +658,9 @@ export default function FinancialsPage() {
           tx.account_type,
           tx.account,
           tx.report_category,
+          tx.detail_type,
+          tx.account_behavior,
+          tx.is_cash_account,
         );
         return classification !== null;
       });
@@ -1008,6 +1063,9 @@ export default function FinancialsPage() {
         accountType,
         account,
         reportCategory,
+        sampleTx.detail_type,
+        sampleTx.account_behavior,
+        sampleTx.is_cash_account,
       );
       if (!classification) continue; // Skip non-P&L accounts
 
