@@ -181,10 +181,57 @@ const getMonthYear = (dateString: string) => {
 const isDateInRange = (
   dateString: string,
   startDate: string,
-  endDate: string,
+  endDateExclusive: string,
 ): boolean => {
   const { dateOnly } = getDateParts(dateString);
-  return dateOnly >= startDate && dateOnly <= endDate;
+  return dateOnly >= startDate && dateOnly < endDateExclusive;
+};
+
+const isLeapYear = (year: number) =>
+  (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+
+const getDaysInMonth = (year: number, month: number) => {
+  const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month === 2 && isLeapYear(year)) {
+    return 29;
+  }
+  return daysInMonth[month - 1];
+};
+
+const addDaysToDateString = (dateString: string, daysToAdd: number) => {
+  let { year, month, day } = getDateParts(dateString);
+  let remaining = daysToAdd;
+
+  while (remaining > 0) {
+    const daysInCurrentMonth = getDaysInMonth(year, month);
+    day += 1;
+    remaining -= 1;
+
+    if (day > daysInCurrentMonth) {
+      day = 1;
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+    }
+  }
+
+  while (remaining < 0) {
+    day -= 1;
+    remaining += 1;
+
+    if (day <= 0) {
+      month -= 1;
+      if (month <= 0) {
+        month = 12;
+        year -= 1;
+      }
+      day = getDaysInMonth(year, month);
+    }
+  }
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 };
 
 // Format date for display without timezone conversion
@@ -524,10 +571,13 @@ export default function FinancialsPage() {
 
     try {
       const { startDate, endDate } = calculateDateRange();
+      const endDateExclusive = addDaysToDateString(endDate, 1);
       const propertyList = Array.from(selectedProperties);
 
       smartLog(`🔍 TIMEZONE-INDEPENDENT P&L DATA FETCH`);
-      smartLog(`📅 Period: ${startDate} to ${endDate}`);
+      smartLog(
+        `📅 Period (inclusive): ${startDate} to ${endDate} | exclusive end: ${endDateExclusive}`,
+      );
       smartLog(
         `🏢 Property Filter: ${
           propertyList.length > 0
@@ -535,6 +585,12 @@ export default function FinancialsPage() {
             : "All properties"
         }`
       );
+
+      console.log("[Financials] Calculated date range", {
+        startDate,
+        endDateInclusive: endDate,
+        endDateExclusive,
+      });
 
       // ENHANCED QUERY: Use the new database structure with better field selection
       let query = supabase
@@ -561,7 +617,7 @@ export default function FinancialsPage() {
        `,
         )
         .gte("date", startDate)
-        .lte("date", endDate)
+        .lt("date", endDateExclusive)
         .order("date", { ascending: true });
 
       // Apply property filter
@@ -580,10 +636,17 @@ export default function FinancialsPage() {
       if (error) throw error;
 
       smartLog(`📊 Fetched ${allTransactions.length} total transactions`);
+      console.log(
+        "[Financials] Supabase returned transactions",
+        allTransactions.length,
+      );
+      console.log("[Financials] Sample Supabase transaction dates", {
+        dates: allTransactions.slice(0, 5).map((tx) => tx.date),
+      });
 
       // Filter transactions using TIMEZONE-INDEPENDENT date comparison
       const filteredTransactions = allTransactions.filter((tx) => {
-        return isDateInRange(tx.date, startDate, endDate);
+        return isDateInRange(tx.date, startDate, endDateExclusive);
       });
 
       smartLog(
@@ -599,6 +662,13 @@ export default function FinancialsPage() {
           formatted: formatDateDisplay(tx.date),
         })),
       );
+      console.log(
+        "[Financials] Filtered transactions",
+        filteredTransactions.length,
+      );
+      console.log("[Financials] Sample filtered transaction dates", {
+        dates: filteredTransactions.slice(0, 5).map((tx) => tx.date),
+      });
 
       // Filter for P&L accounts using enhanced classification
       const plTransactions = filteredTransactions.filter((tx) => {
